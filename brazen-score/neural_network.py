@@ -9,29 +9,30 @@ from torch.nn import functional as F
 from torch.utils import data as torchdata
 
 
-CONV_CHANNELS_1 = 10
-CONV_CHANNELS_2 = 20
-FLATTENED_SIZE = 20*23*123 # idk where this comes from LMAO got it from the shape *dab*
-LINEAR_NODES_1 = 1024
+CONVOLUTION_DIM = 62464
+FEED_FORWARD_DIM = 4096
+
+
+FLATTENED_SIZE = 20*70*499 # shape before flatten layer
+LINEAR_NODES_1 = 2048
 ATTENTION_DIM = 256 # this is supposed to be an embeddings dimension, which I think makes sense
 ATTENTION_FEED_FORWARD_DIM = 1024
 MAX_LENGTH = 75
 SYMBOLS_DIM = 756
 
 
-class ConvolutionStack(nn.Module):
-  def __init__(self, input_channels: int, output_channels: int, dropout=0.1):
+class ConvolutionNet(nn.Module):
+  def __init__(self, input_channels:int, output_channels:int, kernel_size:int=3, stride:int=1, padding:int=0, use_pooling:bool=False):
     super().__init__()
-    self.convolution = nn.Conv2d(input_channels, output_channels, kernel_size=5, padding=1)
-    self.dropout = nn.Dropout(dropout)
-    self.pool = nn.MaxPool2d(kernel_size=2)
+    self.convolution = nn.Conv2d(input_channels, output_channels, kernel_size, stride, padding)
     self.relu = nn.ReLU()
+    self.pool = nn.MaxPool2d(kernel_size=3, stride=2) if use_pooling else None
 
-  def forward(self, x) -> torch.Tensor:
+  def forward(self, x:torch.Tensor) -> torch.Tensor:
     out = self.convolution(x)
-    out = self.dropout(out)
-    out = self.pool(out)
     out = self.relu(out)
+    if self.pool:
+      out = self.pool(out)
 
     return out
 
@@ -83,35 +84,52 @@ class PositionalEncoding(nn.Module):
 class BrazenNet(nn.Module):
   def __init__(self, dropout = 0.1):
     super().__init__()
-    self.convolution_1 = ConvolutionStack(1, CONV_CHANNELS_1, False)
-    self.convolution_2 = ConvolutionStack(CONV_CHANNELS_1, CONV_CHANNELS_2, True)
+    # AlexNet 
+    self.convolution_stack = nn.Sequential(
+      ConvolutionNet(input_channels=1, output_channels=32, kernel_size=11, stride=4, padding=2, use_pooling=True),
+      ConvolutionNet(input_channels=32, output_channels=96, kernel_size=5, padding=2, use_pooling=True),
+      ConvolutionNet(input_channels=96, output_channels=192, kernel_size=3, padding=1),
+      ConvolutionNet(input_channels=192, output_channels=128, kernel_size=3, padding=1),
+      ConvolutionNet(input_channels=128, output_channels=128, kernel_size=3, padding=1, use_pooling=True)
+    )
+    self.convolution_pool = nn.AvgPool2d((6, 6))
     self.flatten = nn.Flatten() # start dim = 1
-    self.linear_1 = nn.Linear(FLATTENED_SIZE, LINEAR_NODES_1)
-    self.linear_relu = nn.ReLU()
-    self.linear_dropout = nn.Dropout(dropout)
-    self.linear_2 = nn.Linear(LINEAR_NODES_1, ATTENTION_DIM)
-    # need to run the model for 75 symbols, so we need to pad the input
+
+    # Feed forward
+    self.feed_forward_stack = nn.Sequential(
+      nn.Linear(CONVOLUTION_DIM, FEED_FORWARD_DIM),
+      nn.ReLU(inplace=True),
+      nn.Linear(FEED_FORWARD_DIM, FEED_FORWARD_DIM),
+      nn.ReLU(inplace=True),
+      nn.Linear(FEED_FORWARD_DIM, ATTENTION_DIM)
+    )
+
+    # Self attention
     self.positional_encoding = PositionalEncoding(ATTENTION_DIM, max_len=MAX_LENGTH)
-    self.attention = SelfAttentionStack(ATTENTION_DIM, ATTENTION_FEED_FORWARD_DIM)
-    self.linear_out = nn.Linear(ATTENTION_DIM, SYMBOLS_DIM + 1) # plus one is for empty
+    self.attention_stack = nn.Sequential(
+      SelfAttentionStack(ATTENTION_DIM, ATTENTION_FEED_FORWARD_DIM),
+      SelfAttentionStack(ATTENTION_DIM, ATTENTION_FEED_FORWARD_DIM),
+      nn.Linear(ATTENTION_DIM, SYMBOLS_DIM + 1)
+    )
+
     self.softmax = nn.LogSoftmax(dim=-1)
 
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
-    out = self.convolution_1(x)
-    out = self.convolution_2(out)
+    # Convolution
+    out = self.convolution_stack(x)
     out = self.flatten(out)
-    out = self.linear_1(out)
-    out = self.linear_relu(out)
-    out = self.linear_dropout(out)
-    out = self.linear_2(out)
-    
-    # We need to run the model for max length
+
+    # Linear
+    out = self.feed_forward_stack(out)
+
+    # Positional encodings
     out = out.unsqueeze(1)
     out = out.repeat(1, MAX_LENGTH, 1)
     out = self.positional_encoding(out)
-    out = self.attention(out)
-    out = self.linear_out(out)
+
+    # Self-attention
+    out = self.attention_stack(out)
     out = self.softmax(out)
 
-    return out # TODO: batch = all encodings. eze the output before the attention net? Run several times with same frozen values? Or just run with a different positional embedding.
+    return out

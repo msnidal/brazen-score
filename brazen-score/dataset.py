@@ -43,7 +43,7 @@ class PrimusDataset(torchdata.Dataset):
 
     self.tokens = self.get_token_mapping()
 
-    transforms = [PadToLargest(self.max_image_size, 255), tvtransforms.Resize((100, 500))] + transforms
+    transforms = [PadToLargest(self.max_image_size, 255)] + transforms
     self.transforms = tvtransforms.Compose(transforms)
 
   def __len__(self):
