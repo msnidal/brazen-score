@@ -1,9 +1,11 @@
 from pathlib import Path
 import collections
+import os
 
 from dataset import PrimusDataset
 from neural_network import BrazenNet
 
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1" 
 BATCH_SIZE = 16 # deal with this later
 PRIMUS_PATH = Path(Path.home(), Path("primus"))
 MODEL_PATH = "./brazen-net.pth"
@@ -41,7 +43,7 @@ def infer(model, inputs, token_map):
 def train(model, train_loader, train_length, device, token_map):
   """ Bingus """
   loss_function = nn.NLLLoss()
-  optimizer = optim.Adam(model.parameters(), lr=1e-5)
+  optimizer = optim.SGD(model.parameters(), lr=0.1)
 
   train_length = len(train_dataset)
   print("Train length:", train_length)
@@ -69,12 +71,13 @@ def test(model, test_loader, device, token_map):
 
   # since we're not training, we don't need to calculate the gradients for our outputs
   with torch.no_grad():
-    for (images, labels) in test_loader:
+    for index, (images, labels) in enumerate(test_loader):
       # calculate outputs by running images through the network
-      images, labels = images.to(device), labels.to(device)
-      outputs = infer(model, images, token_map)
-      predicted = outputs["indices"]
-      equality = predicted == labels
+      if index < 10:
+        images, labels = images.to(device), labels.to(device)
+        outputs = infer(model, images, token_map)
+        predicted = outputs["indices"]
+        equality = predicted == labels
 
   return equality
 
