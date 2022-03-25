@@ -15,8 +15,8 @@ FEED_FORWARD_DIM = 4096
 
 FLATTENED_SIZE = 20*70*499 # shape before flatten layer
 LINEAR_NODES_1 = 2048
-ATTENTION_DIM = 256 # this is supposed to be an embeddings dimension, which I think makes sense
-ATTENTION_FEED_FORWARD_DIM = 1024
+ATTENTION_DIM = 512 # this is supposed to be an embeddings dimension, which I think makes sense
+ATTENTION_FEED_FORWARD_DIM = 2048
 MAX_LENGTH = 75
 SYMBOLS_DIM = 756
 
