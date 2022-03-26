@@ -18,7 +18,7 @@ LINEAR_NODES_1 = 2048
 ATTENTION_DIM = 512 # this is supposed to be an embeddings dimension, which I think makes sense
 ATTENTION_FEED_FORWARD_DIM = 2048
 MAX_LENGTH = 75
-SYMBOLS_DIM = 756
+SYMBOLS_DIM = 758
 
 
 class ConvolutionNet(nn.Module):
