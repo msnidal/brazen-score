@@ -7,7 +7,7 @@ from neural_network import BrazenNet
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1" 
 BATCH_SIZE = 16 # deal with this later
-PRIMUS_PATH = Path(Path.home(), Path("primus"))
+PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 from neural_network import SYMBOLS_DIM
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
   #model = BrazenNet()
   #skip = input("Load existing model? [Y/N]")
   #load_model = True if skip == "Y" else False
-  load_model = True
+  load_model = False
 
   if load_model:
     model.load_state_dict(torch.load(MODEL_PATH))

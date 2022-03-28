@@ -38,7 +38,7 @@ class PrimusDataset(torchdata.Dataset):
 
     self.root_path = root_path
     self.scores = [score.name for score in root_path.iterdir() if score.is_dir()]
-    self.max_image_size = [2003, 288]  # self.get_max_image_size()
+    self.max_image_size = [2004, 288]  # self.get_max_image_size() one added to patch
     self.max_label_length = 75 # self.get_max_label_length()
 
     self.tokens = self.get_token_mapping()

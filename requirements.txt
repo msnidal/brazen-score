@@ -12,3 +12,4 @@ six==1.16.0
 tomli==2.0.1
 typing_extensions==4.1.1
 matplotlib==3.5.1
+einops==0.4.1

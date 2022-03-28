@@ -14,8 +14,11 @@ Feed in an image, it will predict the encoding.
 
 The neural network consists of:
 
-* A convolution step (Resnet? Lighter?) which takes the image input and converts it to high-level features, which are fed into 
-* A transformer self-attention step, which takes those features and outputs a sequence that makes up a label
+1) A SWIN Transformer visual transformer 
+2) Inject sequence embeddings
+3) Transformer self-attention to sequence?
+
+![SWIN Transformer](images/swin.png)
 
 ### Future
 
