@@ -3,13 +3,13 @@ import collections
 import os
 
 from dataset import PrimusDataset
-from neural_network import BrazenNet
+from neural_network import Perception
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1" 
-BATCH_SIZE = 16 # deal with this later
+BATCH_SIZE = 16
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
-from neural_network import SYMBOLS_DIM
+SYMBOLS_DIM = 758
 
 from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
@@ -111,10 +111,7 @@ if __name__ == "__main__":
   device = "cuda" if cuda.is_available() else "cpu"
   print(f"Using {device} device")
 
-  model = BrazenNet().to(device)
-  #model = BrazenNet()
-  #skip = input("Load existing model? [Y/N]")
-  #load_model = True if skip == "Y" else False
+  model = Perception().to(device)
   load_model = False
 
   if load_model:
