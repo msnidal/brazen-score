@@ -36,9 +36,9 @@ class SwinTransformer(nn.Module):
     self.position_bias = nn.init.trunc_normal_(position_bias, mean=0, std=0.02)
     #self.position_bias = self.relative_embedding(normalized_bias, window_dim)
     
-    num_windows = 160 # TODO: figure this out
-    if apply_shift:
-      self.mask = torch.zeros(num_windows, window_dim**2, embedding_dim, dtype=torch.bool)
+    #num_windows = 160 # TODO: figure this out
+    #if apply_shift:
+    #  self.mask = torch.zeros(num_windows, window_dim**2, embedding_dim, dtype=torch.bool)
     #self.self_attention_mask = {
     #  "mask": torch.eye(embedding_dim, dtype=torch.bool),
     #  "fill": float('-inf')
@@ -86,8 +86,9 @@ class SwinTransformer(nn.Module):
 
 class SwinTransformerBlock(nn.Module):
   """ Applies a single layer of the transformer to the input
+  Note: window_dim is the number of patches per window
   """
-  def __init__(self, embedding_dim:int, window_dim:int=8, feed_forward_expansion:int=4, apply_shift:bool=False):
+  def __init__(self, embedding_dim:int, patch_dim:int, apply_shift:bool=False, window_dim:int=8, feed_forward_expansion:int=4, image_shape:tuple=(2048, 320)):
     super().__init__()
     self.apply_shift = window_dim / 2 if apply_shift is True else None
 
@@ -98,6 +99,8 @@ class SwinTransformerBlock(nn.Module):
     ) # fix the number of patches per window, let it find number of windows from image
     self.departition = einops_torch.Rearrange(
       "batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch -> batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
+      vertical_windows=image_shape[1] / patch_dim / window_dim,
+      horizontal_windows=image_shape[0] / patch_dim / window_dim,
       vertical_patches=window_dim,
       horizontal_patches=window_dim
     )
@@ -105,7 +108,6 @@ class SwinTransformerBlock(nn.Module):
     attention = OrderedDict()
     attention["layer_norm"] = nn.LayerNorm(embedding_dim)
     attention["transform"] = SwinTransformer(embedding_dim, apply_shift=apply_shift, window_dim=window_dim)
-
     self.attention = nn.Sequential(attention)
 
     feed_forward = OrderedDict()
@@ -127,34 +129,32 @@ class SwinTransformerBlock(nn.Module):
     return output_patches
 
 class SwinTransformerStage(nn.Module):
-  """ https://arxiv.org/pdf/2103.14030.pdf
-
-  Consists of two swin transformer block. Reads patches in and 
-  
-  Window partition:
-  1) Split into M x M patch windows (M x M)
-  2) Shifted windows, still M x M but mask out the edges
+  """ Two sequential swin transformer blocks. The second block uses a shifted window for context
+  https://arxiv.org/pdf/2103.14030.pdf
   """
-  def __init__(self, embedding_dim:int, blocks:int=2, apply_merge:bool=True, merge_reduce_factor=2):
+  def __init__(self, embedding_dim:int, num_blocks:int=2, apply_merge:bool=True, patch_dim:int=8, image_shape:tuple=(2048, 320), merge_reduce_factor=2):
     super().__init__()
 
     input_pipeline = OrderedDict()
     if apply_merge:
+      # Reduce patches - merge by the reduction factor to 1, widen the embeddings
       input_pipeline["reduce"] = einops_torch.Rearrange(
         "batch (vertical_patches vertical_reduce) (horizontal_patches horizontal_reduce) patch-> batch vertical_patches horizontal_patches (vertical_reduce horizontal_reduce patch)",
         vertical_reduce=merge_reduce_factor,
         horizontal_reduce=merge_reduce_factor
       )
-      embedding_dim *= merge_reduce_factor # reduce patches 
+      embedding_dim *= merge_reduce_factor
+      patch_dim *= merge_reduce_factor
+    
     input_pipeline["embed"] = nn.LazyLinear(embedding_dim)
     self.preprocess = nn.Sequential(input_pipeline)
 
     # We'd like to build blocks with alternating shifted windows
-    assert blocks % 2 == 0, "The number of blocks must be even to use shifted windows"
+    assert num_blocks % 2 == 0, "The number of blocks must be even to use shifted windows"
     transform_pipeline = OrderedDict()
-    for index in range(blocks):
+    for index in range(num_blocks):
       is_odd = index % 2 == 1
-      transform_pipeline[f"block_{index}"] = SwinTransformerBlock(embedding_dim=embedding_dim, apply_shift=is_odd)
+      transform_pipeline[f"block_{index}"] = SwinTransformerBlock(embedding_dim=embedding_dim, patch_dim=patch_dim, apply_shift=is_odd, image_shape=image_shape)
 
     self.transform = nn.Sequential(transform_pipeline)
 
@@ -165,32 +165,24 @@ class SwinTransformerStage(nn.Module):
     return transformed
     
 
-class Perception(nn.Module):
-  """ A SWIN Transformer perception stack
-
-  Sequence:
-  * input (H*W*1)
-  * patch partition: (H/4 x W/4 x 16)
-  * stage 1-2-3-4:
-    1) linear embedding -> 2x swin transformer (H/4 x W/4 x C)
-    2) patch merging -> 2x swin transformer (H/8 x W/8 x 2C)
-    3) patch merging -> 2x swin transformer (H/16 x W/16 x 4C)
-    4) patch merging -> 2x swin transformer (H/32 x W/32 x 8C)
+class BrazenNet(nn.Module):
+  """ A perception stack consisting of a SWIN transformer stage and a linear layer
   """
-  def __init__(self, patch_width=8, patch_height=8):
+  def __init__(self, patch_dim:int=8, image_shape:tuple=(2048, 320), embedding_dim:int=128, block_stages:list=[2, 2, 8, 2], merge_reduce_factor:int=2):
     super().__init__()
     # Map input image to 1d patch tokens
     self.patch_partition = einops_torch.Rearrange(
       "batch 1 (vertical_patches patch_height) (horizontal_patches patch_width) -> batch vertical_patches horizontal_patches (patch_height patch_width)", 
-      patch_height=patch_height, 
-      patch_width=patch_width
+      patch_height=patch_dim, 
+      patch_width=patch_dim
     )
 
     transforms = OrderedDict()
-    transforms["stage_1"] = SwinTransformerStage(TRANSFORMER_DIM, blocks=2, apply_merge=False)
-    transforms["stage_2"] = SwinTransformerStage(2*TRANSFORMER_DIM, blocks=2, apply_merge=True)
-    transforms["stage_3"] = SwinTransformerStage(4*TRANSFORMER_DIM, blocks=8, apply_merge=True)
-    transforms["stage_4"] = SwinTransformerStage(8*TRANSFORMER_DIM, blocks=2, apply_merge=True)
+    for index, num_blocks in enumerate(block_stages):
+      block_embedding_dim = embedding_dim * (2 ** num_blocks) # scale 1, 2, 4, 8...
+      apply_merge = index > 0
+      transforms[f"stage_{index}"] = SwinTransformerStage(block_embedding_dim, num_blocks=num_blocks, apply_merge=apply_merge, patch_dim=patch_dim, image_shape=image_shape, merge_reduce_factor=merge_reduce_factor)
+    
     self.transforms = nn.Sequential(transforms)
   
   def forward(self, images:torch.Tensor):

@@ -3,7 +3,7 @@ import collections
 import os
 
 from dataset import PrimusDataset
-from neural_network import Perception
+import neural_network
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1" 
 BATCH_SIZE = 16
@@ -111,7 +111,7 @@ if __name__ == "__main__":
   device = "cuda" if cuda.is_available() else "cpu"
   print(f"Using {device} device")
 
-  model = Perception().to(device)
+  model = neural_network.BrazenNet().to(device)
   load_model = False
 
   if load_model:
