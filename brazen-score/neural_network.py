@@ -9,11 +9,13 @@ import dataset
 
 WINDOW_SHAPE = (8, 6)
 PATCH_DIM = 8
-EMBEDDING_DIM = (PATCH_DIM ** 2) * 2 # roughly we want to increase dimensionality by the patch content for embeddings
+EMBEDDING_DIM = (
+    PATCH_DIM**2
+) * 2  # roughly we want to increase dimensionality by the patch content for embeddings
 NUM_HEADS = 8
-FEED_FORWARD_EXPANSION = 4 # ff expansion factor in self attention
+FEED_FORWARD_EXPANSION = 4  # ff expansion factor in self attention
 BLOCK_STAGES = (2, 2, 8, 2)
-REDUCE_FACTOR = 2 # reduce factor in patch merging layer per stage
+REDUCE_FACTOR = 2  # reduce factor in patch merging layer per stage
 
 
 class SwinTransformer(nn.Module):
@@ -50,7 +52,7 @@ class SwinTransformer(nn.Module):
         )
 
         # Learned position bias
-        position_bias_dim = window_shape[0] * window_shape[1] # (window_dim * 2) - 1
+        position_bias_dim = window_shape[0] * window_shape[1]  # (window_dim * 2) - 1
         position_bias = nn.parameter.Parameter(
             torch.Tensor(size=(num_heads, position_bias_dim, position_bias_dim))
         )
@@ -83,8 +85,7 @@ class SwinTransformer(nn.Module):
 
 
 class SwinTransformerBlock(nn.Module):
-    """Applies a single layer of the transformer to the input
-    """
+    """Applies a single layer of the transformer to the input"""
 
     def __init__(
         self,
@@ -97,12 +98,21 @@ class SwinTransformerBlock(nn.Module):
     ):
         super().__init__()
         for index, _ in enumerate(image_shape):
-            assert window_shape[0] % 2 == 0 and window_shape[1] % 2 == 0, "Window shape must be even for even window splitting"
-            assert image_shape[index] % patch_dim == 0, "Image width must be divisible by patch dimension"
-            assert (image_shape[index] // patch_dim) % window_shape[index] == 0, "Number of patches must be divisible by window dimension"
+            assert (
+                window_shape[0] % 2 == 0 and window_shape[1] % 2 == 0
+            ), "Window shape must be even for even window splitting"
+            assert (
+                image_shape[index] % patch_dim == 0
+            ), "Image width must be divisible by patch dimension"
+            assert (image_shape[index] // patch_dim) % window_shape[
+                index
+            ] == 0, "Number of patches must be divisible by window dimension"
 
-        self.apply_shift = (window_shape[0] // 2, window_shape[1] // 2) if apply_shift is True else None
-
+        self.apply_shift = (
+            (window_shape[0] // 2, window_shape[1] // 2)
+            if apply_shift is True
+            else None
+        )
 
         self.part = einops_torch.Rearrange(
             "batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch -> batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch",
@@ -190,7 +200,7 @@ class SwinTransformerStage(nn.Module):
                 patch_dim=patch_dim,
                 apply_shift=is_odd,
                 image_shape=image_shape,
-                window_shape=window_shape
+                window_shape=window_shape,
             )
 
         self.transform = nn.Sequential(transform_pipeline)
@@ -225,9 +235,7 @@ class BrazenNet(nn.Module):
         # Apply visual self attention
         transforms = OrderedDict()
         for index, num_blocks in enumerate(block_stages):
-            block_embedding_dim = embedding_dim * (
-                2**index
-            )  # scale 1, 2, 4, 8...
+            block_embedding_dim = embedding_dim * (2**index)  # scale 1, 2, 4, 8...
             apply_merge = index > 0
             transforms[f"stage_{index}"] = SwinTransformerStage(
                 block_embedding_dim,
@@ -243,14 +251,14 @@ class BrazenNet(nn.Module):
 
         # Map to output sequence. Explore use of transformer or direct output
         self.output = (75, 758)
-        #self.output_part = einops_torch.Rearrange(
+        # self.output_part = einops_torch.Rearrange(
         #    "batch vertical_patches horizontal_patches (patch_height patch_width) -> batch (vertical_patches horizontal_patches) patch_height patch_width",
-        #)
+        # )
 
     def forward(self, images: torch.Tensor):
         patches = self.patch_part(images)
         transformed = self.transforms(patches)
         # literally output a 75 x 768 softmaxx tensor LMAO
-        #output = self.output_part(transformed)
+        # output = self.output_part(transformed)
 
         return output
