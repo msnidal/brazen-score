@@ -12,12 +12,13 @@ from torchvision import transforms as tvtransforms
 from PIL import Image
 
 SYMBOLS_DIM = 758
+IMAGE_SHAPE = (2048, 384)
 
 TOKEN_PATH = pathlib.Path("token.pickle")
 
 
 class PadToLargest:
-    def __init__(self, max_image_size=[0, 0], fill=0):
+    def __init__(self, max_image_size=(0, 0), fill=0):
         self.max_image_size = max_image_size
         self.fill = fill
         self.padding_mode = "constant"
@@ -38,15 +39,11 @@ class PrimusDataset(torchdata.Dataset):
 
         self.root_path = root_path
         self.scores = [score.name for score in root_path.iterdir() if score.is_dir()]
-        self.max_image_size = [
-            2048,
-            320,
-        ]  # [2016, 288]  # self.get_max_image_size() one added to patch
         self.max_label_length = 75  # self.get_max_label_length()
 
         self.tokens = self.get_token_mapping()
 
-        transforms = [PadToLargest(self.max_image_size, 255)] + transforms
+        transforms = [PadToLargest(IMAGE_SHAPE, 255)] + transforms
         self.transforms = tvtransforms.Compose(transforms)
 
     def __len__(self):

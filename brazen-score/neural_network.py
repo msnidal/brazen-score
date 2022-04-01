@@ -1,19 +1,19 @@
-import collections
 import math
-from turtle import position
 from typing import OrderedDict
 
-import einops
 from einops.layers import torch as einops_torch
 import torch
 from torch import nn
-from torch.utils import data as torchdata
 
+import dataset
 
-TRANSFORMER_DIM = 128
-NUM_PATCHES = 567
-PATCH_DIM = 16
+WINDOW_SHAPE = (8, 6)
+PATCH_DIM = 8
+EMBEDDING_DIM = (PATCH_DIM ** 2) * 2 # roughly we want to increase dimensionality by the patch content for embeddings
 NUM_HEADS = 8
+FEED_FORWARD_EXPANSION = 4 # ff expansion factor in self attention
+BLOCK_STAGES = (2, 2, 8, 2)
+REDUCE_FACTOR = 2 # reduce factor in patch merging layer per stage
 
 
 class SwinTransformer(nn.Module):
@@ -24,9 +24,8 @@ class SwinTransformer(nn.Module):
     def __init__(
         self,
         embedding_dim: int,
-        num_heads: int = 8,
-        window_dim: int = 8,
-        apply_shift: bool = False,
+        num_heads: int = NUM_HEADS,
+        window_shape: tuple[int] = WINDOW_SHAPE,
     ):
         super().__init__()
 
@@ -51,7 +50,7 @@ class SwinTransformer(nn.Module):
         )
 
         # Learned position bias
-        position_bias_dim = window_dim**2  # (window_dim * 2) - 1
+        position_bias_dim = window_shape[0] * window_shape[1] # (window_dim * 2) - 1
         position_bias = nn.parameter.Parameter(
             torch.Tensor(size=(num_heads, position_bias_dim, position_bias_dim))
         )
@@ -85,7 +84,6 @@ class SwinTransformer(nn.Module):
 
 class SwinTransformerBlock(nn.Module):
     """Applies a single layer of the transformer to the input
-    Note: window_dim is the number of patches per window
     """
 
     def __init__(
@@ -93,30 +91,34 @@ class SwinTransformerBlock(nn.Module):
         embedding_dim: int,
         patch_dim: int,
         apply_shift: bool = False,
-        window_dim: int = 8,
-        feed_forward_expansion: int = 4,
-        image_shape: tuple = (2048, 320),
+        feed_forward_expansion: int = FEED_FORWARD_EXPANSION,
+        image_shape: tuple[int] = dataset.IMAGE_SHAPE,
+        window_shape: tuple[int] = WINDOW_SHAPE,
     ):
         super().__init__()
-        self.apply_shift = window_dim / 2 if apply_shift is True else None
+        for index, _ in enumerate(image_shape):
+            assert window_shape[0] % 2 == 0 and window_shape[1] % 2 == 0, "Window shape must be even for even window splitting"
+            assert image_shape[index] % patch_dim == 0, "Image width must be divisible by patch dimension"
+            assert (image_shape[index] // patch_dim) % window_shape[index] == 0, "Number of patches must be divisible by window dimension"
 
-        self.partition = einops_torch.Rearrange(
+        self.apply_shift = (window_shape[0] // 2, window_shape[1] // 2) if apply_shift is True else None
+
+
+        self.part = einops_torch.Rearrange(
             "batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch -> batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch",
-            vertical_patches=window_dim,
-            horizontal_patches=window_dim,
+            vertical_patches=window_shape[1],
+            horizontal_patches=window_shape[0],
         )  # fix the number of patches per window, let it find number of windows from image
-        self.departition = einops_torch.Rearrange(
+        self.join = einops_torch.Rearrange(
             "batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch -> batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
-            vertical_windows=image_shape[1] / patch_dim / window_dim,
-            horizontal_windows=image_shape[0] / patch_dim / window_dim,
-            vertical_patches=window_dim,
-            horizontal_patches=window_dim,
+            vertical_windows=image_shape[1] // patch_dim // window_shape[1],
+            vertical_patches=window_shape[1],
         )
 
         attention = OrderedDict()
         attention["layer_norm"] = nn.LayerNorm(embedding_dim)
         attention["transform"] = SwinTransformer(
-            embedding_dim, apply_shift=apply_shift, window_dim=window_dim
+            embedding_dim, window_shape=window_shape
         )
         self.attention = nn.Sequential(attention)
 
@@ -135,12 +137,12 @@ class SwinTransformerBlock(nn.Module):
         if self.apply_shift:
             embeddings = embeddings.roll(
                 self.apply_shift, dims=(1, 2)
-            )  # TODO: explore einops.reduce
+            )  # horizontal, vertical. TODO: explore einops.reduce
 
-        patches = self.partition(embeddings)
+        patches = self.part(embeddings)
         attention = patches + self.attention(patches)
         output = attention + self.feed_forward(attention)
-        output_patches = self.departition(output)
+        output_patches = self.join(output)
 
         return output_patches
 
@@ -155,9 +157,10 @@ class SwinTransformerStage(nn.Module):
         embedding_dim: int,
         num_blocks: int = 2,
         apply_merge: bool = True,
-        patch_dim: int = 8,
-        image_shape: tuple = (2048, 320),
-        merge_reduce_factor=2,
+        patch_dim: int = PATCH_DIM,
+        image_shape: tuple[int] = dataset.IMAGE_SHAPE,
+        window_shape: tuple[int] = WINDOW_SHAPE,
+        merge_reduce_factor: int = REDUCE_FACTOR,
     ):
         super().__init__()
 
@@ -187,6 +190,7 @@ class SwinTransformerStage(nn.Module):
                 patch_dim=patch_dim,
                 apply_shift=is_odd,
                 image_shape=image_shape,
+                window_shape=window_shape
             )
 
         self.transform = nn.Sequential(transform_pipeline)
@@ -203,24 +207,26 @@ class BrazenNet(nn.Module):
 
     def __init__(
         self,
-        patch_dim: int = 8,
-        image_shape: tuple = (2048, 320),
-        embedding_dim: int = 128,
-        block_stages: list = [2, 2, 8, 2],
-        merge_reduce_factor: int = 2,
+        patch_dim: int = PATCH_DIM,
+        image_shape: tuple[int] = dataset.IMAGE_SHAPE,
+        window_shape: tuple[int] = WINDOW_SHAPE,
+        embedding_dim: int = EMBEDDING_DIM,
+        block_stages: tuple[int] = BLOCK_STAGES,
+        merge_reduce_factor: int = REDUCE_FACTOR,
     ):
         super().__init__()
         # Map input image to 1d patch tokens
-        self.patch_partition = einops_torch.Rearrange(
+        self.patch_part = einops_torch.Rearrange(
             "batch 1 (vertical_patches patch_height) (horizontal_patches patch_width) -> batch vertical_patches horizontal_patches (patch_height patch_width)",
             patch_height=patch_dim,
             patch_width=patch_dim,
         )
 
+        # Apply visual self attention
         transforms = OrderedDict()
         for index, num_blocks in enumerate(block_stages):
             block_embedding_dim = embedding_dim * (
-                2**num_blocks
+                2**index
             )  # scale 1, 2, 4, 8...
             apply_merge = index > 0
             transforms[f"stage_{index}"] = SwinTransformerStage(
@@ -229,13 +235,22 @@ class BrazenNet(nn.Module):
                 apply_merge=apply_merge,
                 patch_dim=patch_dim,
                 image_shape=image_shape,
+                window_shape=window_shape,
                 merge_reduce_factor=merge_reduce_factor,
             )
 
         self.transforms = nn.Sequential(transforms)
 
-    def forward(self, images: torch.Tensor):
-        patches = self.patch_partition(images)
-        transformed = self.transforms(patches)
+        # Map to output sequence. Explore use of transformer or direct output
+        self.output = (75, 758)
+        #self.output_part = einops_torch.Rearrange(
+        #    "batch vertical_patches horizontal_patches (patch_height patch_width) -> batch (vertical_patches horizontal_patches) patch_height patch_width",
+        #)
 
-        return transformed
+    def forward(self, images: torch.Tensor):
+        patches = self.patch_part(images)
+        transformed = self.transforms(patches)
+        # literally output a 75 x 768 softmaxx tensor LMAO
+        #output = self.output_part(transformed)
+
+        return output
