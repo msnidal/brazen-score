@@ -31,70 +31,54 @@ class SwinTransformer(nn.Module):
         super().__init__()
 
         self.dimension = embedding_dim
-
         assert (
             embedding_dim % num_heads == 0
         ), "Dimension must be divisible by num_heads"
-        self.embeddings = {
-            "query": nn.Linear(embedding_dim, embedding_dim),
-            "key": nn.Linear(embedding_dim, embedding_dim),
-            "value": nn.Linear(embedding_dim, embedding_dim),
-        }
 
+        # Learned embeddings for query, key and value
+        self.attention_modes = ["query", "key", "value"]
+        self.embeddings = {}
+        for mode in self.attention_modes:
+            self.embeddings[mode] = nn.Linear(embedding_dim, embedding_dim)
+
+        # Attention mechanisms
+        self.part_heads = einops_torch.Rearrange(
+            "batch num_windows num_patches (num_heads embedding) -> batch num_windows num_heads num_patches embedding",
+            num_heads=num_heads,
+        )
+        self.transpose_key = einops_torch.Rearrange(
+            "batch num_windows num_heads num_patches embedding -> batch num_windows num_heads embedding num_patches",
+        )
+
+        # Learned position bias
         position_bias_dim = window_dim**2  # (window_dim * 2) - 1
         position_bias = nn.parameter.Parameter(
             torch.Tensor(size=(num_heads, position_bias_dim, position_bias_dim))
         )
         self.position_bias = nn.init.trunc_normal_(position_bias, mean=0, std=0.02)
-        # self.position_bias = self.relative_embedding(normalized_bias, window_dim)
 
-        # num_windows = 160 # TODO: figure this out
-        # if apply_shift:
-        #  self.mask = torch.zeros(num_windows, window_dim**2, embedding_dim, dtype=torch.bool)
-        # self.self_attention_mask = {
-        #  "mask": torch.eye(embedding_dim, dtype=torch.bool),
-        #  "fill": float('-inf')
-        # }
-        # einops.rearrange(
-        #  self.self_attention_mask["mask"],
-        #  "(window_height window_width) (next_window_height next_window_width) -> window_height window_width next_window_height next_window_width"
-        # )
-        # einops reduce self.attention_mask["mask"] and mask out teh bottom right corner as well as right and bottom aginst eachother
-
-        self.head_partition = einops_torch.Rearrange(
-            "batch num_windows num_patches (num_heads embedding) -> batch num_windows num_heads num_patches embedding",
-            num_heads=num_heads,
-        )
-        self.attention_partition = einops_torch.Rearrange(
+        self.join_heads = einops_torch.Rearrange(
             "batch num_windows num_heads num_patches embedding -> batch num_windows num_patches (num_heads embedding)"
         )
 
-    def self_attention(self, windows: torch.Tensor):
-        """Window pass through to the output"""
-
+    def forward(self, patches: torch.Tensor):
         heads = {}
-        for attention_mode in self.embeddings:  # query key value
-            modal_embedding = self.embeddings[attention_mode](windows)
-            heads[attention_mode] = self.head_partition(modal_embedding)
-        query, key, value = heads["query"], heads["key"], heads["value"]
-
-        key_transposed = einops.rearrange(
-            key,
-            "batch num_windows num_heads num_patches embedding -> batch num_windows num_heads embedding num_patches",
+        for mode in self.attention_modes:
+            embedding = self.embeddings[mode](patches)
+            heads[mode] = self.part_heads(embedding)  # multi headed attention
+        query, key_transposed, value = (
+            heads["query"],
+            self.transpose_key(heads["key"]),
+            heads["value"],
         )
+
         attention_logits = (
             torch.matmul(query, key_transposed) / math.sqrt(self.dimension)
         ) + self.position_bias  # + self.mask
         attention = nn.functional.softmax(attention_logits, dim=-1)
-        # attention.masked_fill_(self.self_attention_mask["mask"], self.self_attention_mask["fill"])
 
         self_attention = torch.matmul(attention, value)
-
-        return self_attention
-
-    def forward(self, windows: torch.Tensor):
-        self_attention = self.self_attention(windows)
-        output = self.attention_partition(self_attention)
+        output = self.join_heads(self_attention)
 
         return output
 
