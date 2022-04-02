@@ -66,7 +66,8 @@ class SwinTransformer(nn.Module):
     def forward(self, patches: torch.Tensor):
         heads = {}
         for mode in self.attention_modes:
-            embedding = self.embeddings[mode](patches)
+            embedding_layer = self.embeddings[mode].to(patches.device)
+            embedding = embedding_layer(patches)
             heads[mode] = self.part_heads(embedding)  # multi headed attention
         query, key_transposed, value = (
             heads["query"],
