@@ -5,8 +5,8 @@ import os
 from dataset import PrimusDataset
 import neural_network
 
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-BATCH_SIZE = 16
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1" # verbose debugging
+BATCH_SIZE = 1
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 SYMBOLS_DIM = 758
@@ -30,9 +30,8 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
 
 def infer(model, inputs, token_map):
     """ """
-    outputs = model(inputs)
-    transposed = outputs.transpose(1, 2)
-    _, label_indices = torch.max(transposed, 1)
+    outputs = model(inputs) # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
+    _, label_indices = torch.max(outputs, 2)
 
     labels = []
     for batch in label_indices:
@@ -44,13 +43,13 @@ def infer(model, inputs, token_map):
                 batch_labels.append(token_map[index])
         labels.append(batch_labels)
 
-    out_dict = {"raw": transposed, "indices": label_indices, "labels": labels}
+    out_dict = {"raw": outputs[0], "indices": label_indices[0], "labels": labels[0]}
     return out_dict
 
 
 def train(model, train_loader, train_length, device, token_map):
     """Bingus"""
-    loss_function = nn.NLLLoss(ignore_index=SYMBOLS_DIM)
+    loss_function = nn.NLLLoss(reduction="sum")
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     train_length = len(train_dataset)
@@ -64,7 +63,7 @@ def train(model, train_loader, train_length, device, token_map):
         outputs = infer(model, inputs, token_map)
 
         prediction = outputs["raw"]
-        loss = loss_function(prediction, labels)
+        loss = loss_function(prediction, labels[0])
 
         if index % 100 == 0:
             print(
