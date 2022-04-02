@@ -12,6 +12,7 @@ from torchvision import transforms as tvtransforms
 from PIL import Image
 
 SYMBOLS_DIM = 758
+SEQUENCE_DIM = 75
 IMAGE_SHAPE = (2048, 384)
 
 TOKEN_PATH = pathlib.Path("token.pickle")
@@ -39,7 +40,7 @@ class PrimusDataset(torchdata.Dataset):
 
         self.root_path = root_path
         self.scores = [score.name for score in root_path.iterdir() if score.is_dir()]
-        self.max_label_length = 75  # self.get_max_label_length()
+        self.max_label_length = SEQUENCE_DIM  # self.get_max_label_length()
 
         self.tokens = self.get_token_mapping()
 
