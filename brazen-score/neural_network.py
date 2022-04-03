@@ -11,11 +11,13 @@ import dataset
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (16, 10)
 PATCH_DIM = 16
-EMBEDDING_DIM = 64 # roughly we want to increase dimensionality by the patch content for embeddings. Experimenting with lower value
+EMBEDDING_DIM = 64  # roughly we want to increase dimensionality by the patch content for embeddings. Experimenting with lower value
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
-BLOCK_STAGES = (2, 2, 8, 2) # Number of transformer blocks in each of the 4 stages
-REDUCE_FACTOR = 2  # reduce factor (increase in patch size) in patch merging layer per stage
+BLOCK_STAGES = (2, 2, 8, 2)  # Number of transformer blocks in each of the 4 stages
+REDUCE_FACTOR = (
+    2  # reduce factor (increase in patch size) in patch merging layer per stage
+)
 
 
 class SwinTransformer(nn.Module):
@@ -33,7 +35,7 @@ class SwinTransformer(nn.Module):
     ):
         super().__init__()
 
-        self.dimension = embedding_dim
+        self.head_dim = embedding_dim // num_heads
         assert (
             embedding_dim % num_heads == 0
         ), "Dimension must be divisible by num_heads"
@@ -54,32 +56,106 @@ class SwinTransformer(nn.Module):
         )
 
         # Learned position bias
-        position_bias_dim = window_patch_shape[0] * window_patch_shape[1]  # (window_dim * 2) - 1
         position_bias = nn.parameter.Parameter(
-            torch.Tensor(size=(position_bias_dim, position_bias_dim))
+            torch.Tensor(
+                size=((2 * window_patch_shape[1]) - 1, (2 * window_patch_shape[0]) - 1)
+            )
         )
         self.position_bias = nn.init.trunc_normal_(position_bias, mean=0, std=0.02)
+        self.window_patch_shape = window_patch_shape
+        # we need to project this to position_bias_dim
 
         attention_mask = torch.zeros(
-            (image_window_shape[1], image_window_shape[0], window_patch_shape[1], window_patch_shape[0], window_patch_shape[1], window_patch_shape[0]), 
-            dtype=torch.bool
-        ) # TODO: verify window_patch_shape[0] -> vertical, horizontal
+            (
+                image_window_shape[1],
+                image_window_shape[0],
+                window_patch_shape[1],
+                window_patch_shape[0],
+                window_patch_shape[1],
+                window_patch_shape[0],
+            ),
+            dtype=torch.bool,
+        )  # TODO: verify window_patch_shape[0] -> vertical, horizontal
 
         if apply_shift:
-            horizontal_patch_displacement, vertical_patch_displacement = window_patch_shape[0] // 2, window_patch_shape[1] // 2
-            
+            horizontal_patch_displacement, vertical_patch_displacement = (
+                window_patch_shape[0] // 2,
+                window_patch_shape[1] // 2,
+            )
+
             # Prevent shifted patches from bottom from seeing the top as their neighbours
-            attention_mask[-1, :, :vertical_patch_displacement, :, vertical_patch_displacement:, :] = True
-            attention_mask[-1, :, vertical_patch_displacement:, :, :vertical_patch_displacement, :] = True
+            attention_mask[
+                -1, :, :vertical_patch_displacement, :, vertical_patch_displacement:, :
+            ] = True
+            attention_mask[
+                -1, :, vertical_patch_displacement:, :, :vertical_patch_displacement, :
+            ] = True
 
             # Prevent shifted patches from left from seeing the bottom as their neighbours
-            attention_mask[:, -1, :, :horizontal_patch_displacement, :, horizontal_patch_displacement:] = True
-            attention_mask[:, -1, :, horizontal_patch_displacement:, :, :horizontal_patch_displacement] = True
-        
-        self.attention_mask = einops.rearrange(attention_mask, "vertical_windows horizontal_windows vertical_patches_1 horizontal_patches_1 vertical_patches_2 horizontal_patches_2 -> (vertical_windows horizontal_windows) (vertical_patches_1 horizontal_patches_1) (vertical_patches_2 horizontal_patches_2)")
+            attention_mask[
+                :,
+                -1,
+                :,
+                :horizontal_patch_displacement,
+                :,
+                horizontal_patch_displacement:,
+            ] = True
+            attention_mask[
+                :,
+                -1,
+                :,
+                horizontal_patch_displacement:,
+                :,
+                :horizontal_patch_displacement,
+            ] = True
+
+        self.attention_mask = einops.rearrange(
+            attention_mask,
+            "vertical_windows horizontal_windows vertical_patches_1 horizontal_patches_1 vertical_patches_2 horizontal_patches_2 -> (vertical_windows horizontal_windows) (vertical_patches_1 horizontal_patches_1) (vertical_patches_2 horizontal_patches_2)",
+        )
 
         self.join_heads = einops_torch.Rearrange(
             "batch num_heads num_windows num_patches embedding -> batch num_windows num_patches (num_heads embedding)"
+        )
+
+    def relative_position_bias(self, attention_logits):
+        expanded_logits = einops.rearrange(
+            attention_logits,
+            "batch num_heads num_windows (vertical_patches_base horizontal_patches_base) (vertical_patches_target horizontal_patches_target) -> batch num_heads num_windows vertical_patches_base horizontal_patches_base vertical_patches_target horizontal_patches_target",
+            vertical_patches_base=self.window_patch_shape[1],
+            horizontal_patches_base=self.window_patch_shape[0],
+            vertical_patches_target=self.window_patch_shape[1],
+            horizontal_patches_target=self.window_patch_shape[0],
+        )
+
+        for vertical_base in range(self.window_patch_shape[1]):
+            for horizontal_base in range(self.window_patch_shape[0]):
+                for vertical_target in range(self.window_patch_shape[1]):
+                    for horizontal_target in range(self.window_patch_shape[0]):
+                        relative_vertical_position = vertical_target - vertical_base
+                        relative_horizontal_position = (
+                            horizontal_target - horizontal_base
+                        )
+
+                        expanded_logits[
+                            :,
+                            :,
+                            :,
+                            vertical_base,
+                            horizontal_base,
+                            vertical_target,
+                            horizontal_target,
+                        ] += self.position_bias[
+                            relative_vertical_position, relative_horizontal_position
+                        ]
+
+        return einops.rearrange(
+            expanded_logits,
+            "batch num_heads num_windows vertical_base horizontal_base vertical_target horizontal_target -> batch num_heads num_windows (vertical_base horizontal_base) (vertical_target horizontal_target)",
+            vertical_base=self.window_patch_shape[1],
+            horizontal_base=self.window_patch_shape[0],
+            vertical_target=self.window_patch_shape[1],
+            horizontal_target=self.window_patch_shape[0],
         )
 
     def forward(self, patches: torch.Tensor):
@@ -94,13 +170,14 @@ class SwinTransformer(nn.Module):
             heads["value"],
         )
 
-        attention_logits = (
-            torch.matmul(query, key_transposed) / math.sqrt(self.dimension)
-        ) + self.position_bias
+        attention_logits = torch.matmul(query, key_transposed) / math.sqrt(
+            self.head_dim
+        )
+        biased_attention = self.relative_position_bias(attention_logits)
 
         # Mask relevant values
         attention_mask = self.attention_mask.to(patches.device)
-        masked_attention = attention_logits.masked_fill(attention_mask, float('-inf'))
+        masked_attention = biased_attention.masked_fill(attention_mask, float("-inf"))
         attention = nn.functional.softmax(masked_attention, dim=-1)
 
         self_attention = torch.matmul(attention, value)
@@ -134,15 +211,21 @@ class SwinTransformerBlock(nn.Module):
             ] == 0, "Number of patches must be divisible by window dimension"
 
         self.cyclic_shift = (
-            (-(window_patch_shape[1] // 2), -(window_patch_shape[0] // 2)) # switch order to vertical, horizontal to match embedding
+            (
+                -(window_patch_shape[1] // 2),
+                -(window_patch_shape[0] // 2),
+            )  # switch order to vertical, horizontal to match embedding
             if apply_shift is True
             else None
         )
-        self.metadata = { # debugging metadata
+        self.metadata = {  # debugging metadata
             "embedding_dim": embedding_dim,
             "patch_dim": patch_dim,
             "window_patch_shape": window_patch_shape,
-            "image_window_shape": (image_shape[0] // patch_dim // window_patch_shape[0], image_shape[1] // patch_dim // window_patch_shape[1])
+            "image_window_shape": (
+                image_shape[0] // patch_dim // window_patch_shape[0],
+                image_shape[1] // patch_dim // window_patch_shape[1],
+            ),
         }
 
         self.part = einops_torch.Rearrange(
@@ -152,14 +235,17 @@ class SwinTransformerBlock(nn.Module):
         )  # fix the number of patches per window, let it find number of windows from image
         self.join = einops_torch.Rearrange(
             "batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch -> batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
-            vertical_windows=image_shape[1] // patch_dim // window_patch_shape[1],
+            vertical_windows=self.metadata["image_window_shape"][1],
             vertical_patches=window_patch_shape[1],
         )
 
         attention = OrderedDict()
         attention["layer_norm"] = nn.LayerNorm(embedding_dim)
         attention["transform"] = SwinTransformer(
-            embedding_dim, image_window_shape=self.metadata["image_window_shape"], window_patch_shape=window_patch_shape, apply_shift=apply_shift
+            embedding_dim,
+            image_window_shape=self.metadata["image_window_shape"],
+            window_patch_shape=window_patch_shape,
+            apply_shift=apply_shift,
         )
         self.attention = nn.Sequential(attention)
 
@@ -188,7 +274,7 @@ class SwinTransformerBlock(nn.Module):
         if self.cyclic_shift:
             output_patches = output_patches.roll(
                 (-self.cyclic_shift[0], -self.cyclic_shift[1]), dims=(1, 2)
-            ) # unroll
+            )  # unroll
 
         return output_patches
 
@@ -247,7 +333,9 @@ class SwinTransformerStage(nn.Module):
 
 
 class BrazenNet(nn.Module):
-    """A perception stack consisting of a SWIN transformer stage and a linear layer"""
+    """A perception stack consisting of a SWIN transformer stage and a feed-forward layer
+    Predicts the entire output sequence in one go
+    """
 
     def __init__(
         self,
@@ -270,13 +358,13 @@ class BrazenNet(nn.Module):
         transforms = OrderedDict()
         stage_multipliers = []
         for index, num_blocks in enumerate(block_stages):
-            stage_multipliers.append(merge_reduce_factor ** index)
+            stage_multipliers.append(merge_reduce_factor**index)
             apply_merge = index > 0
             transforms[f"stage_{index}"] = SwinTransformerStage(
-                embedding_dim*stage_multipliers[index],
+                embedding_dim * stage_multipliers[index],
                 num_blocks=num_blocks,
                 apply_merge=apply_merge,
-                patch_dim=patch_dim*stage_multipliers[index],
+                patch_dim=patch_dim * stage_multipliers[index],
                 image_shape=image_shape,
                 window_patch_shape=window_patch_shape,
                 merge_reduce_factor=merge_reduce_factor,
@@ -287,12 +375,16 @@ class BrazenNet(nn.Module):
         self.combine_outputs = einops_torch.Rearrange(
             "batch vertical_patches horizontal_patches patch -> batch (vertical_patches horizontal_patches patch)",
             vertical_patches=window_patch_shape[1],
-            horizontal_patches=window_patch_shape[0]
+            horizontal_patches=window_patch_shape[0],
         )
 
         # Map transformer outputs to sequence of symbols
         output = OrderedDict()
-        output_embedding_dim = window_patch_shape[0] * window_patch_shape[1] * (embedding_dim * stage_multipliers[-1]) # Linearize
+        output_embedding_dim = (
+            window_patch_shape[0]
+            * window_patch_shape[1]
+            * (embedding_dim * stage_multipliers[-1])
+        )  # Linearize
         output_dim = (dataset.SYMBOLS_DIM + 1) * dataset.SEQUENCE_DIM
         inner_output_dim = (dataset.SYMBOLS_DIM + 1) * FEED_FORWARD_EXPANSION
         output["linear_0"] = nn.Linear(output_embedding_dim, inner_output_dim)
@@ -301,7 +393,7 @@ class BrazenNet(nn.Module):
         output["reshape"] = einops_torch.Rearrange(
             "batch (output_sequence output_symbol) -> batch output_sequence output_symbol",
             output_sequence=dataset.SEQUENCE_DIM,
-            output_symbol=(dataset.SYMBOLS_DIM + 1)
+            output_symbol=(dataset.SYMBOLS_DIM + 1),
         )
         output["softmax"] = nn.Softmax(dim=-1)
 
@@ -310,7 +402,10 @@ class BrazenNet(nn.Module):
     def forward(self, images: torch.Tensor):
         patches = self.patch_part(images)
         transformed = self.transforms(patches)
-        assert transformed.shape[1:3] == (WINDOW_PATCH_SHAPE[1], WINDOW_PATCH_SHAPE[0]), "The output was not reduced to a single window at the final output stage"
+        assert transformed.shape[1:3] == (
+            WINDOW_PATCH_SHAPE[1],
+            WINDOW_PATCH_SHAPE[0],
+        ), "The output was not reduced to a single window at the final output stage"
         global_embeddings = self.combine_outputs(transformed)
         output_sequence = self.output(global_embeddings)
 

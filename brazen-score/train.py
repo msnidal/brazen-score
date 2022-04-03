@@ -5,7 +5,7 @@ import os
 from dataset import PrimusDataset
 import neural_network
 
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1" # verbose debugging
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 BATCH_SIZE = 1
 PRIMUS_PATH = Path(Path.home(), Path("primus"))
 MODEL_PATH = "./brazen-net.pth"
@@ -30,7 +30,9 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
 
 def infer(model, inputs, token_map):
     """ """
-    outputs = model(inputs) # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
+    outputs = model(
+        inputs
+    )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
     _, label_indices = torch.max(outputs, 2)
 
     labels = []
@@ -49,8 +51,8 @@ def infer(model, inputs, token_map):
 
 def train(model, train_loader, train_length, device, token_map):
     """Bingus"""
-    loss_function = nn.NLLLoss(reduction="sum")
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    loss_function = nn.NLLLoss(reduction="sum", ignore_index=SYMBOLS_DIM)
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
     train_length = len(train_dataset)
     model.train()

@@ -13,7 +13,7 @@ from PIL import Image
 
 SYMBOLS_DIM = 758
 SEQUENCE_DIM = 75
-IMAGE_SHAPE = (2048, 1280) # rough ratio that's easily dividible
+IMAGE_SHAPE = (2048, 1280)  # rough ratio that's easily dividible
 
 TOKEN_PATH = pathlib.Path("token.pickle")
 
