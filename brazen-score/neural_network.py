@@ -9,9 +9,9 @@ from torch import nn
 import dataset
 
 # Following (horizontal, vertical) coordinates
-WINDOW_PATCH_SHAPE = (16, 20)
+WINDOW_PATCH_SHAPE = (16, 10)
 PATCH_DIM = 16
-EMBEDDING_DIM = 128 # roughly we want to increase dimensionality by the patch content for embeddings. Experimenting with lower value
+EMBEDDING_DIM = 64 # roughly we want to increase dimensionality by the patch content for embeddings. Experimenting with lower value
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
 BLOCK_STAGES = (2, 2, 8, 2) # Number of transformer blocks in each of the 4 stages
@@ -26,10 +26,10 @@ class SwinTransformer(nn.Module):
     def __init__(
         self,
         embedding_dim: int,
-        image_window_shape: tuple[int],
-        window_patch_shape: tuple[int] = WINDOW_PATCH_SHAPE,
+        image_window_shape: tuple,
+        window_patch_shape: tuple = WINDOW_PATCH_SHAPE,
         num_heads: int = NUM_HEADS,
-        apply_shift: tuple[int] = None,
+        apply_shift: tuple = None,
     ):
         super().__init__()
 
@@ -99,7 +99,8 @@ class SwinTransformer(nn.Module):
         ) + self.position_bias
 
         # Mask relevant values
-        masked_attention = attention_logits.masked_fill(self.attention_mask, float('-inf'))
+        attention_mask = self.attention_mask.to(patches.device)
+        masked_attention = attention_logits.masked_fill(attention_mask, float('-inf'))
         attention = nn.functional.softmax(masked_attention, dim=-1)
 
         self_attention = torch.matmul(attention, value)
@@ -117,8 +118,8 @@ class SwinTransformerBlock(nn.Module):
         patch_dim: int,
         apply_shift: bool = False,
         feed_forward_expansion: int = FEED_FORWARD_EXPANSION,
-        image_shape: tuple[int] = dataset.IMAGE_SHAPE,
-        window_patch_shape: tuple[int] = WINDOW_PATCH_SHAPE,
+        image_shape: tuple = dataset.IMAGE_SHAPE,
+        window_patch_shape: tuple = WINDOW_PATCH_SHAPE,
     ):
         super().__init__()
         for index, _ in enumerate(image_shape):
@@ -203,8 +204,8 @@ class SwinTransformerStage(nn.Module):
         num_blocks: int = 2,
         apply_merge: bool = True,
         patch_dim: int = PATCH_DIM,
-        image_shape: tuple[int] = dataset.IMAGE_SHAPE,
-        window_patch_shape: tuple[int] = WINDOW_PATCH_SHAPE,
+        image_shape: tuple = dataset.IMAGE_SHAPE,
+        window_patch_shape: tuple = WINDOW_PATCH_SHAPE,
         merge_reduce_factor: int = REDUCE_FACTOR,
     ):
         super().__init__()
@@ -251,10 +252,10 @@ class BrazenNet(nn.Module):
     def __init__(
         self,
         patch_dim: int = PATCH_DIM,
-        image_shape: tuple[int] = dataset.IMAGE_SHAPE,
-        window_patch_shape: tuple[int] = WINDOW_PATCH_SHAPE,
+        image_shape: tuple = dataset.IMAGE_SHAPE,
+        window_patch_shape: tuple = WINDOW_PATCH_SHAPE,
         embedding_dim: int = EMBEDDING_DIM,
-        block_stages: tuple[int] = BLOCK_STAGES,
+        block_stages: tuple = BLOCK_STAGES,
         merge_reduce_factor: int = REDUCE_FACTOR,
     ):
         super().__init__()

@@ -7,7 +7,7 @@ import neural_network
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1" # verbose debugging
 BATCH_SIZE = 1
-PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
+PRIMUS_PATH = Path(Path.home(), Path("primus"))
 MODEL_PATH = "./brazen-net.pth"
 SYMBOLS_DIM = 758
 
@@ -53,7 +53,6 @@ def train(model, train_loader, train_length, device, token_map):
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     train_length = len(train_dataset)
-    print("Train length:", train_length)
     model.train()
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
@@ -103,7 +102,6 @@ if __name__ == "__main__":
     )
 
     train_length = len(train_dataset)
-    print("Train length:", train_length)
 
     train_loader = torchdata.DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True
@@ -115,13 +113,21 @@ if __name__ == "__main__":
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")
 
+    print("Creating BrazenNet...")
     model = neural_network.BrazenNet().to(device)
+    print("Done creating!")
     load_model = False
 
     if load_model:
+        print("Loading model...")
         model.load_state_dict(torch.load(MODEL_PATH))
+        print("Done loading!")
     else:
+        print("Training model...")
         train(model, train_loader, train_length, device, token_map)
+        print("Done training!")
+        print("Saving model...")
         torch.save(model.state_dict(), MODEL_PATH)
+        print("Done saving model!")
 
     test(model, test_loader, device, token_map)
