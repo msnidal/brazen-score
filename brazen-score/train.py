@@ -15,6 +15,12 @@ from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
 from torch import cuda, nn, optim
 import torch
+import numpy as np
+
+def count_trainable_params(model):
+    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    return params
 
 
 def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
@@ -51,8 +57,8 @@ def infer(model, inputs, token_map):
 
 def train(model, train_loader, train_length, device, token_map):
     """Bingus"""
-    loss_function = nn.NLLLoss(reduction="sum", ignore_index=SYMBOLS_DIM)
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    loss_function = nn.NLLLoss(ignore_index=SYMBOLS_DIM)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     train_length = len(train_dataset)
     model.train()
@@ -118,7 +124,7 @@ if __name__ == "__main__":
     print("Creating BrazenNet...")
     model = neural_network.BrazenNet().to(device)
     print("Done creating!")
-    load_model = False
+    load_model = True
 
     if load_model:
         print("Loading model...")

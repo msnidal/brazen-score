@@ -5,16 +5,17 @@ from einops.layers import torch as einops_torch
 import einops
 import torch
 from torch import nn
+import numpy as np
 
 import dataset
 
 # Following (horizontal, vertical) coordinates
-WINDOW_PATCH_SHAPE = (16, 10)
-PATCH_DIM = 16
-EMBEDDING_DIM = 64  # roughly we want to increase dimensionality by the patch content for embeddings. Experimenting with lower value
+WINDOW_PATCH_SHAPE = (16, 16)
+PATCH_DIM = 8
+EMBEDDING_DIM = 32  # roughly we want to increase dimensionality by the patch content for embeddings. Experimenting with lower value
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
-BLOCK_STAGES = (2, 2, 8, 2)  # Number of transformer blocks in each of the 4 stages
+BLOCK_STAGES = (2, 2, 6, 2)  # Number of transformer blocks in each of the 4 stages
 REDUCE_FACTOR = (
     2  # reduce factor (increase in patch size) in patch merging layer per stage
 )
@@ -57,9 +58,7 @@ class SwinTransformer(nn.Module):
 
         # Learned position bias
         position_bias = nn.parameter.Parameter(
-            torch.Tensor(
-                size=((2 * window_patch_shape[1]) - 1, (2 * window_patch_shape[0]) - 1)
-            )
+            torch.zeros((2 * window_patch_shape[1]) - 1, (2 * window_patch_shape[0]) - 1)
         )
         self.position_bias = nn.init.trunc_normal_(position_bias, mean=0, std=0.02)
         self.window_patch_shape = window_patch_shape
@@ -118,15 +117,17 @@ class SwinTransformer(nn.Module):
             "batch num_heads num_windows num_patches embedding -> batch num_windows num_patches (num_heads embedding)"
         )
 
-    def relative_position_bias(self, attention_logits):
-        expanded_logits = einops.rearrange(
-            attention_logits,
-            "batch num_heads num_windows (vertical_patches_base horizontal_patches_base) (vertical_patches_target horizontal_patches_target) -> batch num_heads num_windows vertical_patches_base horizontal_patches_base vertical_patches_target horizontal_patches_target",
-            vertical_patches_base=self.window_patch_shape[1],
-            horizontal_patches_base=self.window_patch_shape[0],
-            vertical_patches_target=self.window_patch_shape[1],
-            horizontal_patches_target=self.window_patch_shape[0],
-        )
+    def relative_embedding(self):
+        """ Taken from https://github.com/WangFeng18/Swin-Transformer/blob/master/SwinTransformer.py until I can understand views better
+        """
+        cord = torch.tensor(np.array([[i, j] for i in range(self.window_patch_shape[0]) for j in range(self.window_patch_shape[1])]))
+        relation = cord[:, None, :] - cord[None, :, :] + self.window_patch_shape[0] -1 # need to revisit to make non-square
+        # negative is allowed
+        return self.position_bias[relation[:,:,0], relation[:,:,1]]
+
+    """
+    def relative_position_bias(self, device):
+        relative_position_bias = torch.zeros(self.window_patch_shape[1], self.window_patch_shape[0], self.window_patch_shape[1], self.window_patch_shape[0], device=device)
 
         for vertical_base in range(self.window_patch_shape[1]):
             for horizontal_base in range(self.window_patch_shape[0]):
@@ -136,27 +137,17 @@ class SwinTransformer(nn.Module):
                         relative_horizontal_position = (
                             horizontal_target - horizontal_base
                         )
-
-                        expanded_logits[
-                            :,
-                            :,
-                            :,
-                            vertical_base,
-                            horizontal_base,
-                            vertical_target,
-                            horizontal_target,
-                        ] += self.position_bias[
-                            relative_vertical_position, relative_horizontal_position
-                        ]
+                        relative_position_bias[vertical_base, horizontal_base, vertical_target, horizontal_target] = self.position_bias[relative_vertical_position, relative_horizontal_position]
 
         return einops.rearrange(
-            expanded_logits,
-            "batch num_heads num_windows vertical_base horizontal_base vertical_target horizontal_target -> batch num_heads num_windows (vertical_base horizontal_base) (vertical_target horizontal_target)",
+            relative_position_bias,
+            "vertical_base horizontal_base vertical_target horizontal_target -> (vertical_base horizontal_base) (vertical_target horizontal_target)",
             vertical_base=self.window_patch_shape[1],
             horizontal_base=self.window_patch_shape[0],
             vertical_target=self.window_patch_shape[1],
             horizontal_target=self.window_patch_shape[0],
         )
+    """
 
     def forward(self, patches: torch.Tensor):
         heads = {}
@@ -173,7 +164,7 @@ class SwinTransformer(nn.Module):
         attention_logits = torch.matmul(query, key_transposed) / math.sqrt(
             self.head_dim
         )
-        biased_attention = self.relative_position_bias(attention_logits)
+        biased_attention = attention_logits + self.relative_embedding()
 
         # Mask relevant values
         attention_mask = self.attention_mask.to(patches.device)
@@ -398,6 +389,16 @@ class BrazenNet(nn.Module):
         output["softmax"] = nn.Softmax(dim=-1)
 
         self.output = nn.Sequential(output)
+    
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=.02)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
 
     def forward(self, images: torch.Tensor):
         patches = self.patch_part(images)

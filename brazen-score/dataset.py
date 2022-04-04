@@ -13,7 +13,8 @@ from PIL import Image
 
 SYMBOLS_DIM = 758
 SEQUENCE_DIM = 75
-IMAGE_SHAPE = (2048, 1280)  # rough ratio that's easily dividible
+RAW_IMAGE_SHAPE = (2048, 2048)
+IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 
 TOKEN_PATH = pathlib.Path("token.pickle")
 
@@ -44,7 +45,7 @@ class PrimusDataset(torchdata.Dataset):
 
         self.tokens = self.get_token_mapping()
 
-        transforms = [PadToLargest(IMAGE_SHAPE, 255)] + transforms
+        transforms = [PadToLargest(RAW_IMAGE_SHAPE, 255), tvtransforms.Resize(IMAGE_SHAPE)] + transforms
         self.transforms = tvtransforms.Compose(transforms)
 
     def __len__(self):
