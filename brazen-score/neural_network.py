@@ -2,6 +2,7 @@ from audioop import bias
 import math
 from tkinter.tix import WINDOW
 from typing import OrderedDict
+from black import out
 
 from einops.layers import torch as einops_torch
 import einops
@@ -102,7 +103,10 @@ class SwinSelfAttention(nn.Module):
 
         self.mask = einops.rearrange(
             mask,
-            "vertical_windows horizontal_windows vertical_patches_1 horizontal_patches_1 vertical_patches_2 horizontal_patches_2 -> (vertical_windows horizontal_windows) (vertical_patches_1 horizontal_patches_1) (vertical_patches_2 horizontal_patches_2)",
+            utils.assemble_einops_string(
+                input_shape="vertical_windows horizontal_windows vertical_patches_1 horizontal_patches_1 vertical_patches_2 horizontal_patches_2",
+                output_shape="(vertical_windows horizontal_windows) (vertical_patches_1 horizontal_patches_1) (vertical_patches_2 horizontal_patches_2)"
+            )
         )
 
         self.join_heads = einops_torch.Rearrange(
@@ -178,12 +182,18 @@ class SwinTransformerBlock(nn.Module):
         }
 
         self.part = einops_torch.Rearrange(
-            "batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch -> batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch",
+            utils.assemble_einops_string(
+                input_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
+                output_shape="batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch"
+            ),
             vertical_patches=patch_shape[1],
             horizontal_patches=patch_shape[0],
         )  # fix the number of patches per window, let it find number of windows from image
         self.join = einops_torch.Rearrange(
-            "batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch -> batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
+            utils.assemble_einops_string(
+                input_shape="batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch",
+                output_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch"
+            ),
             vertical_windows=self.metadata["window_shape"][1],
             vertical_patches=patch_shape[1],
         )
@@ -243,7 +253,10 @@ class SwinTransformerStage(nn.Module):
         if apply_merge:
             # Reduce patches - merge by the reduction factor to 1, widen the embeddings
             input_pipeline["reduce"] = einops_torch.Rearrange(
-                "batch (vertical_patches vertical_reduce) (horizontal_patches horizontal_reduce) patch -> batch vertical_patches horizontal_patches (vertical_reduce horizontal_reduce patch)",
+                utils.assemble_einops_string(
+                    input_shape="batch (vertical_patches vertical_reduce) (horizontal_patches horizontal_reduce) patch",
+                    output_shape="batch vertical_patches horizontal_patches (vertical_reduce horizontal_reduce patch)"
+                ),
                 vertical_reduce=merge_reduce_factor,
                 horizontal_reduce=merge_reduce_factor,
             )
@@ -292,7 +305,10 @@ class BrazenNet(nn.Module):
 
         # Map greyscale input image to patch tokens
         encoder["extract_patches"] = einops_torch.Rearrange(
-            "batch 1 (vertical_patches patch_height) (horizontal_patches patch_width) -> batch vertical_patches horizontal_patches (patch_height patch_width)",
+            utils.assemble_einops_string(
+                input_shape="batch 1 (vertical_patches patch_height) (horizontal_patches patch_width)",
+                output_shape="batch vertical_patches horizontal_patches (patch_height patch_width)"
+            ),
             patch_height=patch_dim,
             patch_width=patch_dim,
         )
@@ -322,6 +338,7 @@ class BrazenNet(nn.Module):
         self.encoder = nn.Sequential(encoder)
 
         # Map transformer outputs to sequence of symbols
+        # TODO: Here will be a transformer decoder. In comes the masked output self attention along with the encoder output.
         feed_forward = OrderedDict()
         encoder_output_dim = patch_shape[0] * patch_shape[1] * (embedding_dim * patch_reduction_multiples[-1])
         feed_forward_expansion_dim = (dataset.SYMBOLS_DIM + 1) * FEED_FORWARD_EXPANSION
@@ -339,14 +356,14 @@ class BrazenNet(nn.Module):
 
         self.feed_forward = nn.Sequential(feed_forward)
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.trunc_normal_(m.weight, std=0.02)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.trunc_normal_(module.weight, std=0.02)
+            if module.bias is not None:
+                nn.init.constant_(module.bias, 0)
+        elif isinstance(module, nn.LayerNorm):
+            nn.init.constant_(module.bias, 0)
+            nn.init.constant_(module.weight, 1.0)
 
     def forward(self, images: torch.Tensor):
         transformed = self.encoder(images)
