@@ -1,6 +1,6 @@
 import os
 import errno
-import pickle5 as pickle
+import pickle
 import pathlib
 
 import pandas as pd

@@ -7,7 +7,7 @@ import neural_network
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 BATCH_SIZE = 1
-PRIMUS_PATH = Path(Path.home(), Path("primus"))
+PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 SYMBOLS_DIM = 758
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     print("Creating BrazenNet...")
     model = neural_network.BrazenNet().to(device)
     print("Done creating!")
-    load_model = True
+    load_model = False
 
     if load_model:
         print("Loading model...")
