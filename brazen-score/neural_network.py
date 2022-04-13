@@ -1,6 +1,7 @@
 from audioop import bias
 import math
 from tkinter.tix import WINDOW
+from turtle import position
 from typing import OrderedDict
 from black import out
 
@@ -22,6 +23,73 @@ FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
 BLOCK_STAGES = (2, 2, 2, 2, 2)  # Number of transformer blocks in each of the 4 stages
 REDUCE_FACTOR = 2  # reduce factor (increase in patch size) in patch merging layer per stage
 
+class MultiHeadAttention(nn.Module):
+    """ Generic multi-head attention module implemented throughout transformer """
+
+    def __init__(self, embedding_dim:int, num_heads:int, mask:torch.Tensor=None, position_bias_dim:int=None, position_bias_indices:tuple=None, shape_prefix="batch"):
+        super().__init__()
+
+        #self.reshape_input = reshape_input # TODO: pass in prefix string
+        assert embedding_dim % num_heads == 0, "Embedding dim must be divisible by number of heads"
+        self.head_dim = embedding_dim // num_heads
+        self.split_heads = einops_torch.Rearrange(
+            f"{shape_prefix} sequence (num_heads head_embedding) -> {shape_prefix} num_heads sequence head_embedding", 
+            num_heads=num_heads, 
+            head_embedding=self.head_dim
+        )
+        self.join_heads = einops_torch.Rearrange(
+            f"{shape_prefix} num_heads sequence head_embedding -> {shape_prefix} sequence (num_heads head_embedding)", 
+            num_heads=num_heads, 
+            head_embedding=self.head_dim
+        )
+
+        # Learned embeddings for query, key and value
+        self.attention_modes = ["query", "key", "value"]
+        for mode in self.attention_modes:
+            setattr(self, f"{mode}_embedding", nn.Linear(embedding_dim, embedding_dim, bias=True)) # TODO: verify bias. https://discuss.pytorch.org/t/whats-the-meaning-of-the-bias/13095
+        
+        # Optional properties
+        if mask is not None:
+            #assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {num_heads})"
+            self.register_buffer("mask", mask)
+
+        if position_bias_dim is not None:
+            assert position_bias_indices is not None, "Position bias indices must be specified"
+            self.position_bias_indices = position_bias_indices
+
+            # Learned position bias
+            self.position_bias = nn.parameter.Parameter(torch.zeros(position_bias_dim))
+            self.position_bias = nn.init.trunc_normal_(self.position_bias, mean=0, std=0.02) # TODO: explore at class level
+        
+        self.softmax = nn.LogSoftmax(dim=-1)
+
+    def forward(self, query:torch.Tensor, key:torch.Tensor, value:torch.Tensor):
+        """ Apply multi-head attention to query, key and value
+        """
+
+        # Apply embeddings and split heads
+        query_embedding, key_embedding, value_embedding = self.query_embedding(query), self.key_embedding(key), self.value_embedding(value)
+        query_heads, key_heads, value_heads = self.split_heads(query_embedding), self.split_heads(key_embedding), self.split_heads(value_embedding)
+
+        attention_logits = query_heads @ key_heads.transpose(-1, -2) / math.sqrt(self.head_dim)
+
+        # Optional position bias for swin transforms
+        if self.position_bias is not None:
+            attention_logits = (
+                attention_logits + self.position_bias[self.position_bias_indices[0], self.position_bias_indices[1]]
+            )
+
+        # Mask relevant values, apply softmax
+        if self.mask is not None:
+            attention_logits = attention_logits.masked_fill(self.mask, float("-inf"))
+        attention = self.softmax(attention_logits)
+
+        # Apply attention
+        output = attention @ value_heads
+        output = self.join_heads(output)
+
+        return output
+
 
 class SwinSelfAttention(nn.Module):
     """Implements locality self attention from https://arxiv.org/pdf/2112.13492.pdf"""
@@ -41,40 +109,11 @@ class SwinSelfAttention(nn.Module):
         We want to view it as a relative matrix in the full attention dimension
         """
         return type(self)._position_bias_indices
+    
+    def generate_mask(self, window_shape:int, patch_shape:int, num_heads:int, apply_shift:tuple=None):
+        """ Create the unique self-attention mask, taking into consideration window shifting
+        """
 
-    def __init__(
-        self,
-        embedding_dim: int,
-        window_shape: tuple,
-        patch_shape: tuple = WINDOW_PATCH_SHAPE,
-        num_heads: int = NUM_HEADS,
-        apply_shift: tuple = None,
-    ):
-        super().__init__()
-
-        self.head_dim = embedding_dim // num_heads
-        assert embedding_dim % num_heads == 0, "Dimension must be divisible by num_heads"
-
-        # Learned embeddings for query, key and value
-        self.attention_modes = ["query", "key", "value"]
-        self.embeddings = {}
-        for mode in self.attention_modes:
-            self.embeddings[mode] = nn.Linear(embedding_dim, embedding_dim)
-
-        # Attention mechanisms
-        self.part_heads = einops_torch.Rearrange(
-            "batch num_windows num_patches (num_heads embedding) -> batch num_heads num_windows num_patches embedding",
-            num_heads=num_heads,
-        )
-        self.transpose_key = einops_torch.Rearrange(
-            "batch num_heads num_windows num_patches embedding -> batch num_heads num_windows embedding num_patches",
-        )
-
-        # Learned position bias
-        position_bias = nn.parameter.Parameter(torch.zeros((2 * patch_shape[1]) - 1, (2 * patch_shape[0]) - 1))
-        self.position_bias = nn.init.trunc_normal_(position_bias, mean=0, std=0.02)
-
-        # Mask for attention
         mask = torch.zeros(
             (
                 window_shape[1],
@@ -101,7 +140,7 @@ class SwinSelfAttention(nn.Module):
             mask[:, -1, :, :shift_x, :, shift_x:] = True
             mask[:, -1, :, shift_x:, :, :shift_x] = True
 
-        self.mask = einops.rearrange(
+        arranged_mask = einops.rearrange(
             mask,
             utils.assemble_einops_string(
                 input_shape="vertical_windows horizontal_windows vertical_patches_1 horizontal_patches_1 vertical_patches_2 horizontal_patches_2",
@@ -109,34 +148,31 @@ class SwinSelfAttention(nn.Module):
             )
         )
 
-        self.join_heads = einops_torch.Rearrange(
-            "batch num_heads num_windows num_patches embedding -> batch num_windows num_patches (num_heads embedding)"
+        return einops.repeat(arranged_mask, "num_windows num_patches_1 num_patches_2 -> num_windows num_heads num_patches_1 num_patches_2", num_heads=num_heads)
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        window_shape: tuple,
+        patch_shape: tuple = WINDOW_PATCH_SHAPE,
+        num_heads: int = NUM_HEADS,
+        apply_shift: tuple = None,
+    ):
+        super().__init__()
+
+        position_bias_dim = (2 * patch_shape[1] - 1, 2 * patch_shape[0] - 1)
+        mask = self.generate_mask(window_shape, patch_shape, num_heads, apply_shift=apply_shift)
+        self.attention = MultiHeadAttention(
+            embedding_dim, 
+            num_heads, 
+            mask=mask, 
+            position_bias_dim=position_bias_dim, 
+            position_bias_indices=self.position_bias_indices, 
+            shape_prefix="batch num_windows"
         )
 
     def forward(self, patches: torch.Tensor):
-        heads = {}
-        for mode in self.attention_modes:
-            embedding_layer = self.embeddings[mode].to(patches.device)
-            embedding = embedding_layer(patches)
-            heads[mode] = self.part_heads(embedding)  # multi headed attention
-        query, key_transposed, value = (
-            heads["query"],
-            self.transpose_key(heads["key"]),
-            heads["value"],
-        )
-
-        attention_logits = torch.matmul(query, key_transposed) / math.sqrt(self.head_dim)
-        biased_attention = (
-            attention_logits + self.position_bias[self.position_bias_indices[0], self.position_bias_indices[1]]
-        )
-
-        # Mask relevant values
-        mask = self.mask.to(patches.device)
-        masked_attention = biased_attention.masked_fill(mask, float("-inf"))
-        attention = nn.functional.softmax(masked_attention, dim=-1)
-
-        self_attention = torch.matmul(attention, value)
-        output = self.join_heads(self_attention)
+        output = self.attention(patches, patches, patches)
 
         return output
 
@@ -286,6 +322,30 @@ class SwinTransformerStage(nn.Module):
         return transformed
 
 
+class DecoderBlock(nn.Module):
+    """ Decode all of the tokens in the output sequence as well as the Swin self-attention output
+    """
+
+    def __init__(self, output_length: int, embedding_dim:int, num_blocks: int = 2):
+        super().__init__()
+
+        self.output_length = output_length
+        # Decoer stage consists of:
+
+        # 1. self attention on output sequence embedding (or output from previous step)
+        # 2. attention against swin transformed image embeddings
+        # 3. feed-forward
+
+        self.decoder = nn.LazyLinear(
+            embedding_dim=EMBEDDING_DIM, output_dim=dataset.NUM_CLASSES
+        )
+    
+    def forward(self, embeddings: torch.Tensor):
+        output_sequence = torch.tensor([float("-inf") for _ in range(self.output_length)]) # Begin masked
+        for index, _ in enumerate(range(self.output_length)):
+            output_sequence[index] = self.decoder(embeddings, output_sequence)
+        return output_sequence
+
 class BrazenNet(nn.Module):
     """A perception stack consisting of a SWIN transformer stage and a feed-forward layer
     Predicts the entire output sequence in one go
@@ -352,7 +412,7 @@ class BrazenNet(nn.Module):
             output_sequence=dataset.SEQUENCE_DIM,
             output_symbol=(dataset.SYMBOLS_DIM + 1),
         )
-        feed_forward["softmax"] = nn.Softmax(dim=-1)
+        feed_forward["softmax"] = nn.LogSoftmax(dim=-1)
 
         self.feed_forward = nn.Sequential(feed_forward)
 
@@ -371,6 +431,7 @@ class BrazenNet(nn.Module):
             WINDOW_PATCH_SHAPE[1],
             WINDOW_PATCH_SHAPE[0],
         ), "The output was not reduced to a single window at the final output stage"
+
         global_embeddings = self.combine_outputs(transformed)
         output_sequence = self.output(global_embeddings)
 
