@@ -11,7 +11,7 @@ from torchvision.transforms import functional as tvfunctional
 from torchvision import transforms as tvtransforms
 from PIL import Image
 
-SYMBOLS_DIM = 758
+NUM_SYMBOLS= 758
 SEQUENCE_DIM = 75
 RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
@@ -80,9 +80,9 @@ class PrimusDataset(torchdata.Dataset):
             label = [self.tokens.index(token) for token in label]
 
         if pad_length:
-            # special value of SYMBOLS_DIM is the empty padding value
+            # special value of NUM_SYMBOLS is the empty padding value
             length_pad = [
-                SYMBOLS_DIM for _ in range(self.max_label_length - len(label))
+                NUM_SYMBOLS for _ in range(self.max_label_length - len(label))
             ]
             label += length_pad
 

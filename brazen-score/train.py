@@ -2,14 +2,13 @@ from pathlib import Path
 import collections
 import os
 
-from dataset import PrimusDataset
+from dataset import PrimusDataset, NUM_SYMBOLS
 import neural_network
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 BATCH_SIZE = 1
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
-SYMBOLS_DIM = 758
 
 from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
@@ -34,10 +33,10 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
             file.write(" ".join(label))
 
 
-def infer(model, inputs, token_map):
+def infer(model, inputs, token_map, labels=None):
     """ """
-    outputs = model(
-        inputs
+    outputs, loss = model(
+        inputs, labels=labels
     )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
     _, label_indices = torch.max(outputs, 2)
 
@@ -45,19 +44,18 @@ def infer(model, inputs, token_map):
     for batch in label_indices:
         batch_labels = []
         for index in batch:
-            if index == SYMBOLS_DIM:
+            if index == NUM_SYMBOLS:
                 batch_labels.append("")
             else:
                 batch_labels.append(token_map[index])
         labels.append(batch_labels)
 
-    out_dict = {"raw": outputs[0], "indices": label_indices[0], "labels": labels[0]}
-    return out_dict
+    return {"raw": outputs[0], "indices": label_indices[0], "labels": labels[0], "loss": loss}
 
 
 def train(model, train_loader, train_length, device, token_map):
     """Bingus"""
-    loss_function = nn.NLLLoss(ignore_index=SYMBOLS_DIM)
+    #loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
     train_length = len(train_dataset)
@@ -67,10 +65,11 @@ def train(model, train_loader, train_length, device, token_map):
         # if index == 4186:
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
-        outputs = infer(model, inputs, token_map)
+        outputs = infer(model, inputs, token_map, labels=labels)
 
         prediction = outputs["raw"]
-        loss = loss_function(prediction, labels[0])
+        loss = outputs["loss"]
+        #loss = loss_function(prediction, labels[0])
 
         if index % 100 == 0:
             print(
