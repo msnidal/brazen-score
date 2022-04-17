@@ -19,7 +19,7 @@ import dataset
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 128  # roughly we want to increase dimensionality by the patch content for embeddings.
-DECODER_EMBEDDING_DIM = 128
+DECODER_EMBEDDING_DIM = 2048
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2, 2, 2, 2)  # Number of transformer blocks in each of the 4 stages
@@ -85,7 +85,7 @@ class MultiHeadAttention(nn.Module):
 
         # Mask relevant values, apply softmax
         if self.mask is not None:
-            attention_logits = attention_logits.masked_fill(self.mask, float("-inf"))
+            attention_logits = attention_logits.masked_fill(self.mask, float(-100))
         attention = self.softmax(attention_logits)
 
         # Apply attention
@@ -127,6 +127,7 @@ class SwinSelfAttention(nn.Module):
                 patch_shape[1],
                 patch_shape[0],
             ),
+            names=("window_y", "window_x", "base_patch_y", "base_patch_x", "target_patch_y", "target_patch_x"),
             dtype=torch.bool,
         )  # TODO: verify patch_shape[0] -> vertical, horizontal
 
@@ -145,14 +146,14 @@ class SwinSelfAttention(nn.Module):
             mask[:, -1, :, shift_x:, :, :shift_x] = True
 
         arranged_mask = einops.rearrange(
-            mask,
+            mask.rename(None),
             utils.assemble_einops_string(
-                input_shape="vertical_windows horizontal_windows vertical_patches_1 horizontal_patches_1 vertical_patches_2 horizontal_patches_2",
-                output_shape="(vertical_windows horizontal_windows) (vertical_patches_1 horizontal_patches_1) (vertical_patches_2 horizontal_patches_2)"
+                input_shape="vertical_windows horizontal_windows vertical_patches_base horizontal_patches_base vertical_patches_target horizontal_patches_target",
+                output_shape="vertical_windows horizontal_windows (vertical_patches_base horizontal_patches_base) (vertical_patches_target horizontal_patches_target)"
             )
         )
 
-        return einops.repeat(arranged_mask, "num_windows num_patches_1 num_patches_2 -> num_windows num_heads num_patches_1 num_patches_2", num_heads=num_heads)
+        return einops.repeat(arranged_mask, "vertical_windows horizontal_windows num_patches_1 num_patches_2 -> vertical_windows horizontal_windows num_heads num_patches_1 num_patches_2", num_heads=num_heads)
 
     def __init__(
         self,
@@ -172,7 +173,7 @@ class SwinSelfAttention(nn.Module):
             mask=mask, 
             position_bias_dim=position_bias_dim, 
             position_bias_indices=self.position_bias_indices, 
-            shape_prefix="batch num_windows"
+            shape_prefix="batch vertical_windows horizontal_windows"
         )
 
     def forward(self, patches: torch.Tensor):
@@ -221,17 +222,17 @@ class SwinTransformerBlock(nn.Module):
             ),
         }
 
-        self.part = einops_torch.Rearrange(
+        self.partition_windows = einops_torch.Rearrange(
             utils.assemble_einops_string(
                 input_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
-                output_shape="batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch"
+                output_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch"
             ),
             vertical_patches=patch_shape[1],
             horizontal_patches=patch_shape[0],
         )  # fix the number of patches per window, let it find number of windows from image
-        self.join = einops_torch.Rearrange(
+        self.join_windows = einops_torch.Rearrange(
             utils.assemble_einops_string(
-                input_shape="batch (vertical_windows horizontal_windows) (vertical_patches horizontal_patches) patch",
+                input_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch",
                 output_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch"
             ),
             vertical_windows=self.metadata["window_shape"][1],
@@ -259,12 +260,12 @@ class SwinTransformerBlock(nn.Module):
         if self.cyclic_shift:
             embeddings = embeddings.roll(
                 self.cyclic_shift, dims=(1, 2)
-            )  # horizontal, vertical. TODO: explore einops.reduce
+            )  # base[:][0][0]  == shifted[:][4][4]
 
-        patches = self.part(embeddings)
+        patches = self.partition_windows(embeddings)
         attention = patches + self.attention(patches)
         output = attention + self.feed_forward(attention)
-        output_patches = self.join(output)
+        output_patches = self.join_windows(output)
 
         if self.cyclic_shift:
             output_patches = output_patches.roll((-self.cyclic_shift[0], -self.cyclic_shift[1]), dims=(1, 2))  # unroll
@@ -382,7 +383,7 @@ class BrazenNet(nn.Module):
         # Map greyscale input image to patch tokens
         self.extract_encoder_patches = einops_torch.Rearrange(
             utils.assemble_einops_string(
-                input_shape="batch 1 (vertical_patches patch_height) (horizontal_patches patch_width)",
+                input_shape="batch (vertical_patches patch_height) (horizontal_patches patch_width)",
                 output_shape="batch vertical_patches horizontal_patches (patch_height patch_width)"
             ),
             patch_height=patch_dim,

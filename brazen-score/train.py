@@ -6,7 +6,7 @@ from dataset import PrimusDataset, NUM_SYMBOLS
 import neural_network
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
-BATCH_SIZE = 1
+BATCH_SIZE = 8
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 

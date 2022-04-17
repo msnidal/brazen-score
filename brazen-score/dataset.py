@@ -64,9 +64,10 @@ class PrimusDataset(torchdata.Dataset):
         image_file = self.root_path / score / (score + ".png")
         image = tvio.read_image(str(image_file), tvio.ImageReadMode.GRAY)
         image = self.transforms(image)
-        image = image.type(torch.FloatTensor) / 255.0  # normalize to float
+        image = image.type(torch.FloatTensor).rename("channels", "height", "width") / 255.0  # normalize to float
+        image = torch.squeeze(image, "channels")  # remove channel dimension
 
-        return image
+        return image.rename(None)
 
     def get_score_label(self, score, encode_tokens=False, pad_length=False):
         """Get the vectorized, agnostic label for a score."""
@@ -86,7 +87,7 @@ class PrimusDataset(torchdata.Dataset):
             ]
             label += length_pad
 
-        torch_label = torch.LongTensor(label)
+        torch_label = torch.tensor(label, dtype=torch.long)
         return torch_label
 
     def get_max_image_size(self):
