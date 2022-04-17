@@ -9,6 +9,7 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 BATCH_SIZE = 8
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
+EPOCH_SIZE = 100
 
 from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
@@ -60,6 +61,8 @@ def train(model, train_loader, train_length, device, token_map):
 
     train_length = len(train_dataset)
     model.train()
+    training_loss = []
+    epoch_loss = []
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
         # if index == 4186:
@@ -71,13 +74,19 @@ def train(model, train_loader, train_length, device, token_map):
         loss = outputs["loss"]
         #loss = loss_function(prediction, labels[0])
 
-        if index % 100 == 0:
+        if index % EPOCH_SIZE == 0:
+            epoch_loss_average = sum(epoch_loss) / len(epoch_loss)
+            epoch_loss.clear()
+            training_loss.append(epoch_loss_average)
             print(
-                f"Loss: {loss.item():>7f}\t[{index * BATCH_SIZE:>5d}/{train_length:>5d}]"
+                f"Loss: {epoch_loss_average:>7f}\t[{index * BATCH_SIZE:>5d}/{train_length:>5d}]"
             )
 
         loss.backward()
         optimizer.step()
+
+        epoch_loss.append(loss.item())
+
 
 
 def test(model, test_loader, device, token_map):
