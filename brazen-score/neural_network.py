@@ -15,16 +15,37 @@ import numpy as np
 import utils
 import dataset
 
+
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
-ENCODER_EMBEDDING_DIM = 128  # roughly we want to increase dimensionality by the patch content for embeddings.
-DECODER_EMBEDDING_DIM = 2048
+ENCODER_EMBEDDING_DIM = 64  # roughly we want to increase dimensionality by the patch content for embeddings.
+DECODER_EMBEDDING_DIM = 4096
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2, 2, 2, 2)  # Number of transformer blocks in each of the 4 stages
 NUM_DECODER_BLOCKS = 2 # Number of decoder blocks
 REDUCE_FACTOR = 2  # reduce factor (increase in patch size) in patch merging layer per stage
+
+
+class BrazenParameters:
+    def __init__(
+        self,
+        window_patch_shape = WINDOW_PATCH_SHAPE,
+        image_shape = dataset.IMAGE_SHAPE,
+        patch_dim = PATCH_DIM,
+        encoder_embedding_dim = ENCODER_EMBEDDING_DIM,
+        decoder_embedding_dim = DECODER_EMBEDDING_DIM,
+        num_heads = NUM_HEADS,
+        feed_forward_expansion = FEED_FORWARD_EXPANSION,
+        encoder_block_stages = ENCODER_BLOCK_STAGES,
+        num_decoder_blocks = NUM_DECODER_BLOCKS,
+        reduce_factor = REDUCE_FACTOR
+    ):
+        params = locals()
+        for param in params:
+            setattr(self, param, params[param])
+
 
 class MultiHeadAttention(nn.Module):
     """ Generic multi-head attention module implemented throughout transformer """
@@ -284,6 +305,7 @@ class SwinTransformerStage(nn.Module):
     def __init__(
         self,
         embedding_dim: int,
+        input_dim: int,
         num_blocks: int = 2,
         apply_merge: bool = True,
         patch_dim: int = PATCH_DIM,
@@ -305,7 +327,7 @@ class SwinTransformerStage(nn.Module):
                 horizontal_reduce=merge_reduce_factor,
             )
 
-        input_pipeline["embed"] = nn.LazyLinear(embedding_dim)
+        input_pipeline["embed"] = nn.Linear(input_dim, embedding_dim)
         self.preprocess = nn.Sequential(input_pipeline)
 
         # We'd like to build blocks with alternating shifted windows
@@ -350,7 +372,7 @@ class DecoderBlock(nn.Module):
         feed_forward["linear_0"] = nn.Linear(embedding_dim, embedding_dim * feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
         feed_forward["linear_1"] = nn.Linear(embedding_dim * feed_forward_expansion, embedding_dim)
-        self.feed_forward = nn.LazyLinear(embedding_dim)
+        self.feed_forward = nn.Sequential(feed_forward)
 
         self.feed_forward_norm = nn.LayerNorm(embedding_dim)
 
@@ -371,14 +393,7 @@ class BrazenNet(nn.Module):
 
     def __init__(
         self,
-        patch_dim: int = PATCH_DIM,
-        image_shape: tuple = dataset.IMAGE_SHAPE,
-        patch_shape: tuple = WINDOW_PATCH_SHAPE,
-        encoder_embedding_dim: int = ENCODER_EMBEDDING_DIM,
-        decoder_embedding_dim: int = DECODER_EMBEDDING_DIM,
-        encoder_block_stages: tuple = ENCODER_BLOCK_STAGES,
-        num_decoder_blocks: int = NUM_DECODER_BLOCKS,
-        merge_reduce_factor: int = REDUCE_FACTOR,
+        config: BrazenParameters,
     ):
         super().__init__()
 
@@ -389,24 +404,27 @@ class BrazenNet(nn.Module):
                 input_shape="batch (vertical_patches patch_height) (horizontal_patches patch_width)",
                 output_shape="batch vertical_patches horizontal_patches (patch_height patch_width)"
             ),
-            patch_height=patch_dim,
-            patch_width=patch_dim,
+            patch_height=config.patch_dim,
+            patch_width=config.patch_dim,
         )
 
         encoder = OrderedDict()
         # Apply visual self-attention
-        patch_reduction_multiples = [merge_reduce_factor**index for index, _ in enumerate(encoder_block_stages)]
-        for index, num_blocks in enumerate(encoder_block_stages):
+        patch_reduction_multiples = [config.reduce_factor**index for index, _ in enumerate(config.encoder_block_stages)]
+        base_patch = WINDOW_PATCH_SHAPE[0] * WINDOW_PATCH_SHAPE[1]
+        input_dim = [base_patch] + [config.encoder_embedding_dim * patch_reduction_multiples[i+1] * 2 for i in range(len(config.encoder_block_stages) - 1)]
+        for index, num_blocks in enumerate(config.encoder_block_stages):
             # Apply sequential swin transformer blocks, reducing the number of patches for each stage
             apply_merge = index > 0
             encoder[f"stage_{index}"] = SwinTransformerStage(
-                encoder_embedding_dim * patch_reduction_multiples[index],
+                config.encoder_embedding_dim * patch_reduction_multiples[index],
+                input_dim[index],
                 num_blocks=num_blocks,
                 apply_merge=apply_merge,
-                patch_dim=patch_dim * patch_reduction_multiples[index],
-                image_shape=image_shape,
-                patch_shape=patch_shape,
-                merge_reduce_factor=merge_reduce_factor,
+                patch_dim=config.patch_dim * patch_reduction_multiples[index],
+                image_shape=config.image_shape,
+                patch_shape=config.window_patch_shape,
+                merge_reduce_factor=config.reduce_factor,
             )
 
         self.encoder = nn.Sequential(encoder)
@@ -415,25 +433,27 @@ class BrazenNet(nn.Module):
         encoder_embeddings = OrderedDict()
         encoder_embeddings["combine_outputs"] = einops_torch.Rearrange(
             "batch vertical_patches horizontal_patches embedding -> batch (vertical_patches horizontal_patches embedding)",
-            vertical_patches=patch_shape[1],
-            horizontal_patches=patch_shape[0],
+            vertical_patches=config.window_patch_shape[1],
+            horizontal_patches=config.window_patch_shape[0],
         )
-        encoder_embeddings["reduce"] = nn.LazyLinear(decoder_embedding_dim)
+        encoder_out_patch_dim = patch_reduction_multiples[-1] * config.encoder_embedding_dim
+        encoder_out_patches = WINDOW_PATCH_SHAPE[0] * WINDOW_PATCH_SHAPE[1] # assumes reductino to single window, is tested
+        
+        encoder_embeddings["reduce"] = nn.Linear(encoder_out_patches * encoder_out_patch_dim, config.decoder_embedding_dim)
         self.embed_encoder_output = nn.Sequential(encoder_embeddings)
 
         # TODO: Here will be a transformer decoder. In comes the masked output self attention along with the encoder output.
         self.output_length = dataset.SEQUENCE_DIM
-        self.embed_label = nn.Embedding(dataset.NUM_SYMBOLS + 1, decoder_embedding_dim, padding_idx=dataset.NUM_SYMBOLS)
-        self.label_embedding = nn.LazyLinear(decoder_embedding_dim)
+        self.embed_label = nn.Embedding(dataset.NUM_SYMBOLS + 1, config.decoder_embedding_dim, padding_idx=dataset.NUM_SYMBOLS)
 
         decoder = OrderedDict()
-        for index in range(num_decoder_blocks):
-            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, decoder_embedding_dim)
+        for index in range(config.num_decoder_blocks):
+            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim)
         self.decoder = nn.Sequential(decoder)
 
         # Map transformer outputs to sequence of symbols
         output = OrderedDict()
-        output["linear_out"] = nn.Linear(decoder_embedding_dim, dataset.NUM_SYMBOLS + 1)
+        output["linear_out"] = nn.Linear(config.decoder_embedding_dim, dataset.NUM_SYMBOLS + 1)
         output["softmax"] = nn.LogSoftmax(dim=-1)
 
         self.output = nn.Sequential(output)
@@ -462,13 +482,14 @@ class BrazenNet(nn.Module):
         embeddings = {"encoder": einops.repeat(encoder_embeddings, "batch embedding -> batch sequence_length embedding", sequence_length=dataset.SEQUENCE_DIM)}
 
         if labels is None: # the model is being used in inference mdoe
-            labels = torch.tensor([float("-inf") for _ in range(self.output_length)]) # Begin masked
-            embeddings["decoder"] = self.embed_label(labels)
+            labels = torch.tensor([dataset.NUM_SYMBOLS for _ in range(self.output_length)], device=images.device) # Begin masked
+            batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=2)
+            embeddings["decoder"] = self.embed_label(batch_labels)
 
             for index in range(self.output_length):
                 decoder_outputs = self.decoder(embeddings)
                 output_sequence = self.output(decoder_outputs["decoder"])
-                labels[:index] = torch.max(output_sequence, dim=-1)[:index]
+                labels[:index] = torch.max(output_sequence, dim=-1)[1][0, :index]
 
             loss = None
         else:
@@ -476,6 +497,6 @@ class BrazenNet(nn.Module):
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs["decoder"])
-            loss = functional.nll_loss(output_sequence.transpose(2, 1), labels)
+            loss = functional.nll_loss(output_sequence.transpose(2, 1), labels, ignore_index=dataset.NUM_SYMBOLS)
 
         return output_sequence, loss

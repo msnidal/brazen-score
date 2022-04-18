@@ -9,11 +9,10 @@ import wandb
 
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
-BATCH_SIZE = 2
+BATCH_SIZE = 1
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 MODEL_FOLDER = Path("models")
-EPOCH_SIZE = 100
 LEARNING_RATE = 1e-3
 
 from matplotlib import pyplot as plt
@@ -30,8 +29,7 @@ def count_trainable_params(model):
 
 def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
     """ """
-    grayscale_images = [image_channels[0] for image_channels in image_batch]
-    for index, image in enumerate(grayscale_images):
+    for index, image in enumerate(image_batch):
         plt.imshow(image)
         plt.savefig(f"{output_folder}/{name_base}_{index}.png")
         label = labels[index]
@@ -63,43 +61,28 @@ def train(model, train_loader, train_length, device, token_map):
     """Bingus"""
     #loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    train_length = len(train_dataset)
 
     wandb.init(project="brazen-score", entity="msnidal")
-    wandb.config = {
+    train_config = {
         "learning_rate": LEARNING_RATE,
         "batch_size": BATCH_SIZE
     }
+    model_config = vars(model)
+    wandb.config = {**train_config, **model_config}
 
     model.train()
-    training_loss = []
-    epoch_loss = []
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
-        # if index == 4186:
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = infer(model, inputs, token_map, labels=labels)
 
         prediction = outputs["raw"]
         loss = outputs["loss"]
-        #loss = loss_function(prediction, labels[0])
-
         loss.backward()
         optimizer.step()
-        epoch_loss.append(loss.item())
         wandb.log({"loss": loss})
         wandb.watch(model)
-
-        if index % EPOCH_SIZE == 0:
-            epoch_loss_average = sum(epoch_loss) / len(epoch_loss)
-            epoch_loss.clear()
-            training_loss.append(epoch_loss_average)
-            print(
-                f"Loss: {epoch_loss_average:>7f}\t[{index * BATCH_SIZE:>5d}/{train_length:>5d}]"
-            )
-
-
 
 
 def test(model, test_loader, device, token_map):
@@ -144,7 +127,8 @@ if __name__ == "__main__":
     print(f"Using {device} device")
 
     print("Creating BrazenNet...")
-    model = neural_network.BrazenNet().to(device)
+    config = neural_network.BrazenParameters()
+    model = neural_network.BrazenNet(config).to(device)
     print("Done creating!")
 
     trained_models = list(MODEL_FOLDER.glob("**/*.pth"))
