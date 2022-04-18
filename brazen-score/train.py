@@ -71,6 +71,7 @@ def train(model, train_loader, train_length, device, token_map):
     wandb.config = {**train_config, **model_config}
 
     model.train()
+    wandb.watch(model)
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
         inputs, labels = inputs.to(device), labels.to(device)
@@ -82,7 +83,6 @@ def train(model, train_loader, train_length, device, token_map):
         loss.backward()
         optimizer.step()
         wandb.log({"loss": loss})
-        wandb.watch(model)
 
 
 def test(model, test_loader, device, token_map):

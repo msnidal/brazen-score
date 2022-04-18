@@ -22,9 +22,9 @@ PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 64  # roughly we want to increase dimensionality by the patch content for embeddings.
 DECODER_EMBEDDING_DIM = 4096
 NUM_HEADS = 8
-FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
+FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2, 2, 2, 2)  # Number of transformer blocks in each of the 4 stages
-NUM_DECODER_BLOCKS = 2 # Number of decoder blocks
+NUM_DECODER_BLOCKS = 1 # Number of decoder blocks
 REDUCE_FACTOR = 2  # reduce factor (increase in patch size) in patch merging layer per stage
 
 
@@ -472,10 +472,12 @@ class BrazenNet(nn.Module):
         encoder_patches = self.extract_encoder_patches(images)
         encoded_images = self.encoder(encoder_patches)
 
+        """
         assert encoded_images.shape[1:3] == (
             WINDOW_PATCH_SHAPE[1],
             WINDOW_PATCH_SHAPE[0],
         ), "The output was not reduced to a single window at the final output stage. Check window shape, reduce factor, and encoder block stages."
+        """
 
         encoder_embeddings = self.embed_encoder_output(encoded_images)
 
