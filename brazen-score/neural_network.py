@@ -53,7 +53,10 @@ class MultiHeadAttention(nn.Module):
         
         # Optional properties
         #assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {num_heads})"
-        self.mask = mask if mask is not None else None
+        if mask is not None:
+            self.register_buffer("mask", mask, persistent=False)
+        else:
+            self.mask = None
 
         if position_bias_dim is not None:
             assert position_bias_indices is not None, "Position bias indices must be specified"

@@ -1,15 +1,20 @@
 from pathlib import Path
-import collections
 import os
+import time
 
 from dataset import PrimusDataset, NUM_SYMBOLS
 import neural_network
 
+import wandb
+
+
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
-BATCH_SIZE = 8
+BATCH_SIZE = 2
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
+MODEL_FOLDER = Path("models")
 EPOCH_SIZE = 100
+LEARNING_RATE = 1e-3
 
 from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
@@ -57,9 +62,15 @@ def infer(model, inputs, token_map, labels=None):
 def train(model, train_loader, train_length, device, token_map):
     """Bingus"""
     #loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     train_length = len(train_dataset)
+
+    wandb.init(project="brazen-score", entity="msnidal")
+    wandb.config = {
+        "learning_rate": LEARNING_RATE,
+        "batch_size": BATCH_SIZE
+    }
+
     model.train()
     training_loss = []
     epoch_loss = []
@@ -74,6 +85,12 @@ def train(model, train_loader, train_length, device, token_map):
         loss = outputs["loss"]
         #loss = loss_function(prediction, labels[0])
 
+        loss.backward()
+        optimizer.step()
+        epoch_loss.append(loss.item())
+        wandb.log({"loss": loss})
+        wandb.watch(model)
+
         if index % EPOCH_SIZE == 0:
             epoch_loss_average = sum(epoch_loss) / len(epoch_loss)
             epoch_loss.clear()
@@ -82,10 +99,6 @@ def train(model, train_loader, train_length, device, token_map):
                 f"Loss: {epoch_loss_average:>7f}\t[{index * BATCH_SIZE:>5d}/{train_length:>5d}]"
             )
 
-        loss.backward()
-        optimizer.step()
-
-        epoch_loss.append(loss.item())
 
 
 
@@ -109,6 +122,7 @@ def test(model, test_loader, device, token_map):
 if __name__ == "__main__":
     # Create, split dataset into train & test
     torch.manual_seed(0)
+
     primus_dataset = PrimusDataset(PRIMUS_PATH)
     token_map = primus_dataset.tokens
     train_size = int(0.8 * len(primus_dataset))
@@ -132,18 +146,32 @@ if __name__ == "__main__":
     print("Creating BrazenNet...")
     model = neural_network.BrazenNet().to(device)
     print("Done creating!")
-    load_model = False
 
-    if load_model:
-        print("Loading model...")
-        model.load_state_dict(torch.load(MODEL_PATH))
-        print("Done loading!")
-    else:
+    trained_models = list(MODEL_FOLDER.glob("**/*.pth"))
+    did_load = False
+    if trained_models:
+        print("Found the following models: ")
+        for index, model_path in enumerate(trained_models):
+            print(f"{index}\t: {model_path}")
+        prompt = ""
+        while prompt != "T" and prompt != "L":
+            prompt = input("Enter T to train or L to load: ")
+        if prompt == "L":
+            while prompt not in range(len(trained_models)):
+                prompt = int(input("Select the model index from above: "))
+            selection = trained_models[prompt]
+            print(f"Loading model {selection}...")
+            model.load_state_dict(torch.load(selection))
+            print("Done loading!")
+            did_load = True
+        
+    if not did_load:
         print("Training model...")
         train(model, train_loader, train_length, device, token_map)
         print("Done training!")
         print("Saving model...")
-        torch.save(model.state_dict(), MODEL_PATH)
+        model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
+        torch.save(model.state_dict(), model_path)
         print("Done saving model!")
-
+        
     test(model, test_loader, device, token_map)
