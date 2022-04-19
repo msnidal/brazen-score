@@ -19,11 +19,11 @@ import dataset
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
-ENCODER_EMBEDDING_DIM = 64  # roughly we want to increase dimensionality by the patch content for embeddings.
+ENCODER_EMBEDDING_DIM = 128  # roughly we want to increase dimensionality by the patch content for embeddings.
 DECODER_EMBEDDING_DIM = 4096
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
-ENCODER_BLOCK_STAGES = (2, 2, 2, 2, 2)  # Number of transformer blocks in each of the 4 stages
+ENCODER_BLOCK_STAGES = (2, 2, 2, 2)  # Number of transformer blocks in each of the 4 stages
 NUM_DECODER_BLOCKS = 1 # Number of decoder blocks
 REDUCE_FACTOR = 2  # reduce factor (increase in patch size) in patch merging layer per stage
 

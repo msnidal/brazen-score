@@ -10,6 +10,7 @@ import wandb
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 BATCH_SIZE = 1
+EPOCH_SIZE = 32
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 MODEL_FOLDER = Path("models")
@@ -32,7 +33,7 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
     for index, image in enumerate(image_batch):
         plt.imshow(image)
         plt.savefig(f"{output_folder}/{name_base}_{index}.png")
-        label = labels[index]
+        label = labels
         with open(f"{output_folder}/{name_base}_{index}.txt", "w") as file:
             file.write(" ".join(label))
 
@@ -75,14 +76,16 @@ def train(model, train_loader, train_length, device, token_map):
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
         inputs, labels = inputs.to(device), labels.to(device)
-        optimizer.zero_grad()
         outputs = infer(model, inputs, token_map, labels=labels)
 
         prediction = outputs["raw"]
         loss = outputs["loss"]
         loss.backward()
-        optimizer.step()
-        wandb.log({"loss": loss})
+        wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
+        
+        if index % EPOCH_SIZE == 0 and index != 0:
+            optimizer.step()
+            optimizer.zero_grad()
 
 
 def test(model, test_loader, device, token_map):
