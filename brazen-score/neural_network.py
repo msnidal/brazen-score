@@ -24,7 +24,7 @@ DECODER_EMBEDDING_DIM = 4096
 NUM_HEADS = 4
 FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
-NUM_DECODER_BLOCKS = 1 # Number of decoder blocks
+NUM_DECODER_BLOCKS = 1  # Number of decoder blocks
 REDUCE_FACTOR = 16  # reduce factor (increase in patch size) in patch merging layer per stage
 
 
@@ -41,21 +41,22 @@ def init_weights(module):
     elif isinstance(module, nn.parameter.Parameter):
         nn.init.trunc_normal_(module, 0.0, std=0.02)
 
+
 class BrazenParameters:
     def __init__(
         self,
-        window_patch_shape = WINDOW_PATCH_SHAPE,
-        image_shape = dataset.IMAGE_SHAPE,
-        patch_dim = PATCH_DIM,
-        encoder_embedding_dim = ENCODER_EMBEDDING_DIM,
-        decoder_embedding_dim = DECODER_EMBEDDING_DIM,
-        num_heads = NUM_HEADS,
-        feed_forward_expansion = FEED_FORWARD_EXPANSION,
-        encoder_block_stages = ENCODER_BLOCK_STAGES,
-        num_decoder_blocks = NUM_DECODER_BLOCKS,
-        reduce_factor = REDUCE_FACTOR,
-        output_sequence_dim = dataset.SEQUENCE_DIM,
-        num_symbols = dataset.NUM_SYMBOLS
+        window_patch_shape=WINDOW_PATCH_SHAPE,
+        image_shape=dataset.IMAGE_SHAPE,
+        patch_dim=PATCH_DIM,
+        encoder_embedding_dim=ENCODER_EMBEDDING_DIM,
+        decoder_embedding_dim=DECODER_EMBEDDING_DIM,
+        num_heads=NUM_HEADS,
+        feed_forward_expansion=FEED_FORWARD_EXPANSION,
+        encoder_block_stages=ENCODER_BLOCK_STAGES,
+        num_decoder_blocks=NUM_DECODER_BLOCKS,
+        reduce_factor=REDUCE_FACTOR,
+        output_sequence_dim=dataset.SEQUENCE_DIM,
+        num_symbols=dataset.NUM_SYMBOLS,
     ):
         params = locals()
         for param in params:
@@ -63,25 +64,33 @@ class BrazenParameters:
 
 
 class MultiHeadAttention(nn.Module):
-    """ Generic multi-head attention module implemented throughout both visual and output sequence transformer """
+    """Generic multi-head attention module implemented throughout both visual and output sequence transformer"""
 
-    def __init__(self, embedding_dim:int, num_heads:int, mask:torch.Tensor=None, position_bias_dim:int=None, position_bias_indices:tuple=None, shape_prefix="batch"):
+    def __init__(
+        self,
+        embedding_dim: int,
+        num_heads: int,
+        mask: torch.Tensor = None,
+        position_bias_dim: int = None,
+        position_bias_indices: tuple = None,
+        shape_prefix="batch",
+    ):
         super().__init__()
 
-        #self.reshape_input = reshape_input # TODO: pass in prefix string
+        # self.reshape_input = reshape_input # TODO: pass in prefix string
         assert embedding_dim % num_heads == 0, "Embedding dim must be divisible by number of heads"
         self.num_heads = num_heads
         self.head_dim = embedding_dim // num_heads
 
         self.split_heads = einops_torch.Rearrange(
-            f"{shape_prefix} sequence (num_heads head_embedding) -> {shape_prefix} num_heads sequence head_embedding", 
-            num_heads=num_heads, 
-            head_embedding=self.head_dim
+            f"{shape_prefix} sequence (num_heads head_embedding) -> {shape_prefix} num_heads sequence head_embedding",
+            num_heads=num_heads,
+            head_embedding=self.head_dim,
         )
         self.join_heads = einops_torch.Rearrange(
-            f"{shape_prefix} num_heads sequence head_embedding -> {shape_prefix} sequence (num_heads head_embedding)", 
-            num_heads=num_heads, 
-            head_embedding=self.head_dim
+            f"{shape_prefix} num_heads sequence head_embedding -> {shape_prefix} sequence (num_heads head_embedding)",
+            num_heads=num_heads,
+            head_embedding=self.head_dim,
         )
 
         # Learned embeddings for query, key and value
@@ -89,14 +98,14 @@ class MultiHeadAttention(nn.Module):
             modules = OrderedDict()
             for index in range(num_heads):
                 modules[str(index)] = nn.Linear(embedding_dim, self.head_dim)
-            
+
             setattr(self, f"embed_{name}", nn.ModuleDict(modules))
 
-        #self.embed_query, self.embed_key, self.embed_value = nn.Linear(embedding_dim, embedding_dim), nn.Linear(embedding_dim, embedding_dim), nn.Linear(embedding_dim, embedding_dim)
+        # self.embed_query, self.embed_key, self.embed_value = nn.Linear(embedding_dim, embedding_dim), nn.Linear(embedding_dim, embedding_dim), nn.Linear(embedding_dim, embedding_dim)
         self.output_embedding = nn.Linear(embedding_dim, embedding_dim)
-        
+
         # Optional properties
-        #assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {num_heads})"
+        # assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {num_heads})"
         if mask is not None:
             self.register_buffer("mask", mask, persistent=False)
         else:
@@ -110,12 +119,11 @@ class MultiHeadAttention(nn.Module):
             self.position_bias = nn.parameter.Parameter(torch.zeros(position_bias_dim))
         else:
             self.position_bias = None
-        
+
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, query:torch.Tensor, key:torch.Tensor, value:torch.Tensor):
-        """ Apply multi-head attention to query, key and value
-        """
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
+        """Apply multi-head attention to query, key and value"""
 
         # Apply embeddings and split heads
         attention_heads = []
@@ -140,7 +148,7 @@ class MultiHeadAttention(nn.Module):
             # Apply attention
             output = torch.matmul(attention, value_head)
             attention_heads.append(output)
-        
+
         concatenated_heads = torch.cat(attention_heads, dim=-1)
         output_embedding = self.output_embedding(concatenated_heads)
 
@@ -165,10 +173,9 @@ class SwinSelfAttention(nn.Module):
         We want to view it as a relative matrix in the full attention dimension
         """
         return type(self)._position_bias_indices
-    
-    def generate_mask(self, window_shape:int, patch_shape:int, num_heads:int, apply_shift:tuple=None):
-        """ Create the unique self-attention mask, taking into consideration window shifting
-        """
+
+    def generate_mask(self, window_shape: int, patch_shape: int, num_heads: int, apply_shift: tuple = None):
+        """Create the unique self-attention mask, taking into consideration window shifting"""
 
         mask = torch.zeros(
             (
@@ -201,8 +208,8 @@ class SwinSelfAttention(nn.Module):
             mask.rename(None),
             utils.assemble_einops_string(
                 input_shape="vertical_windows horizontal_windows vertical_patches_base horizontal_patches_base vertical_patches_target horizontal_patches_target",
-                output_shape="vertical_windows horizontal_windows (vertical_patches_base horizontal_patches_base) (vertical_patches_target horizontal_patches_target)"
-            )
+                output_shape="vertical_windows horizontal_windows (vertical_patches_base horizontal_patches_base) (vertical_patches_target horizontal_patches_target)",
+            ),
         )
         return arranged_mask
 
@@ -219,12 +226,12 @@ class SwinSelfAttention(nn.Module):
         position_bias_dim = (2 * patch_shape[1] - 1, 2 * patch_shape[0] - 1)
         mask = self.generate_mask(window_shape, patch_shape, num_heads, apply_shift=apply_shift)
         self.attention = MultiHeadAttention(
-            embedding_dim, 
-            num_heads, 
-            mask=mask, 
-            position_bias_dim=position_bias_dim, 
-            position_bias_indices=self.position_bias_indices, 
-            shape_prefix="batch vertical_windows horizontal_windows"
+            embedding_dim,
+            num_heads,
+            mask=mask,
+            position_bias_dim=position_bias_dim,
+            position_bias_indices=self.position_bias_indices,
+            shape_prefix="batch vertical_windows horizontal_windows",
         )
 
     def forward(self, patches: torch.Tensor):
@@ -276,7 +283,7 @@ class SwinTransformerBlock(nn.Module):
         self.partition_windows = einops_torch.Rearrange(
             utils.assemble_einops_string(
                 input_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
-                output_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch"
+                output_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch",
             ),
             vertical_patches=patch_shape[1],
             horizontal_patches=patch_shape[0],
@@ -284,7 +291,7 @@ class SwinTransformerBlock(nn.Module):
         self.join_windows = einops_torch.Rearrange(
             utils.assemble_einops_string(
                 input_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch",
-                output_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch"
+                output_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
             ),
             vertical_windows=self.metadata["window_shape"][1],
             vertical_patches=patch_shape[1],
@@ -309,9 +316,7 @@ class SwinTransformerBlock(nn.Module):
 
     def forward(self, embeddings: torch.Tensor):
         if self.cyclic_shift:
-            embeddings = embeddings.roll(
-                self.cyclic_shift, dims=(1, 2)
-            )  # base[:][0][0]  == shifted[:][4][4]
+            embeddings = embeddings.roll(self.cyclic_shift, dims=(1, 2))  # base[:][0][0]  == shifted[:][4][4]
 
         patches = self.partition_windows(embeddings)
         attention = patches + self.attention(patches)
@@ -348,7 +353,7 @@ class SwinTransformerStage(nn.Module):
             input_pipeline["reduce"] = einops_torch.Rearrange(
                 utils.assemble_einops_string(
                     input_shape="batch (vertical_patches vertical_reduce) (horizontal_patches horizontal_reduce) patch",
-                    output_shape="batch vertical_patches horizontal_patches (vertical_reduce horizontal_reduce patch)"
+                    output_shape="batch vertical_patches horizontal_patches (vertical_reduce horizontal_reduce patch)",
                 ),
                 vertical_reduce=merge_reduce_factor,
                 horizontal_reduce=merge_reduce_factor,
@@ -380,10 +385,9 @@ class SwinTransformerStage(nn.Module):
 
 
 class DecoderBlock(nn.Module):
-    """ Decode all of the tokens in the output sequence as well as the Swin self-attention output
-    """
+    """Decode all of the tokens in the output sequence as well as the Swin self-attention output"""
 
-    def __init__(self, output_length: int, embedding_dim:int, feed_forward_expansion:int=FEED_FORWARD_EXPANSION):
+    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int = FEED_FORWARD_EXPANSION):
         super().__init__()
 
         self.output_length = output_length
@@ -403,11 +407,15 @@ class DecoderBlock(nn.Module):
 
         self.feed_forward_norm = nn.LayerNorm(embedding_dim)
 
-    
-    def forward(self, embeddings:dict):
-        #output_sequence = torch.tensor([float("-inf") for _ in range(self.output_length)]) # Begin masked
-        output_attention = self.output_attention_norm(embeddings["decoder"] + self.output_attention(embeddings["decoder"], embeddings["decoder"], embeddings["decoder"]))
-        attention_decoder_outputs = self.attention_decoder_norm(output_attention + self.attention_decoder(embeddings["encoder"], embeddings["encoder"], output_attention))
+    def forward(self, embeddings: dict):
+        # output_sequence = torch.tensor([float("-inf") for _ in range(self.output_length)]) # Begin masked
+        output_attention = self.output_attention_norm(
+            embeddings["decoder"]
+            + self.output_attention(embeddings["decoder"], embeddings["decoder"], embeddings["decoder"])
+        )
+        attention_decoder_outputs = self.attention_decoder_norm(
+            output_attention + self.attention_decoder(embeddings["encoder"], embeddings["encoder"], output_attention)
+        )
         feed_forward = self.feed_forward_norm(attention_decoder_outputs + self.feed_forward(attention_decoder_outputs))
 
         return {"decoder": feed_forward, "encoder": embeddings["encoder"]}
@@ -429,7 +437,7 @@ class BrazenNet(nn.Module):
         self.extract_encoder_patches = einops_torch.Rearrange(
             utils.assemble_einops_string(
                 input_shape="batch (vertical_patches patch_height) (horizontal_patches patch_width)",
-                output_shape="batch vertical_patches horizontal_patches (patch_height patch_width)"
+                output_shape="batch vertical_patches horizontal_patches (patch_height patch_width)",
             ),
             patch_height=config.patch_dim,
             patch_width=config.patch_dim,
@@ -437,8 +445,13 @@ class BrazenNet(nn.Module):
 
         encoder = OrderedDict()
         # Apply visual self-attention
-        patch_reduction_multiples = [config.reduce_factor**index for index, _ in enumerate(config.encoder_block_stages)]
-        input_dim = [config.patch_dim ** 2] + [config.encoder_embedding_dim * patch_reduction_multiples[i+1] * config.reduce_factor for i in range(len(config.encoder_block_stages) - 1)]
+        patch_reduction_multiples = [
+            config.reduce_factor**index for index, _ in enumerate(config.encoder_block_stages)
+        ]
+        input_dim = [config.patch_dim**2] + [
+            config.encoder_embedding_dim * patch_reduction_multiples[i + 1] * config.reduce_factor
+            for i in range(len(config.encoder_block_stages) - 1)
+        ]
         for index, num_blocks in enumerate(config.encoder_block_stages):
             # Apply sequential swin transformer blocks, reducing the number of patches for each stage
             apply_merge = index > 0
@@ -463,15 +476,21 @@ class BrazenNet(nn.Module):
             horizontal_patches=config.window_patch_shape[0],
         )
         encoder_out_patch_dim = patch_reduction_multiples[-1] * config.encoder_embedding_dim
-        encoder_out_patches = config.window_patch_shape[0] * config.window_patch_shape[1] # assumes reductino to single window, is tested
-        
-        encoder_embeddings["reduce"] = nn.Linear(encoder_out_patches * encoder_out_patch_dim, config.decoder_embedding_dim)
+        encoder_out_patches = (
+            config.window_patch_shape[0] * config.window_patch_shape[1]
+        )  # assumes reductino to single window, is tested
+
+        encoder_embeddings["reduce"] = nn.Linear(
+            encoder_out_patches * encoder_out_patch_dim, config.decoder_embedding_dim
+        )
         self.embed_encoder_output = nn.Sequential(encoder_embeddings)
 
         self.output_length = config.output_sequence_dim
         self.num_symbols = config.num_symbols
 
-        self.embed_label = nn.Embedding(config.num_symbols + 1, config.decoder_embedding_dim, padding_idx=config.num_symbols)
+        self.embed_label = nn.Embedding(
+            config.num_symbols + 1, config.decoder_embedding_dim, padding_idx=config.num_symbols
+        )
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
@@ -485,7 +504,6 @@ class BrazenNet(nn.Module):
 
         self.output = nn.Sequential(output)
 
-
     def forward(self, images: torch.Tensor, labels: torch.Tensor = None):
         encoder_patches = self.extract_encoder_patches(images)
         encoded_images = self.encoder(encoder_patches)
@@ -497,17 +515,25 @@ class BrazenNet(nn.Module):
 
         encoder_embeddings = self.embed_encoder_output(encoded_images)
 
-        embeddings = {"encoder": einops.repeat(encoder_embeddings, "batch embedding -> batch sequence_length embedding", sequence_length=self.output_length)}
+        embeddings = {
+            "encoder": einops.repeat(
+                encoder_embeddings,
+                "batch embedding -> batch sequence_length embedding",
+                sequence_length=self.output_length,
+            )
+        }
 
-        if labels is None: # the model is being used in inference mdoe
-            labels = torch.tensor([self.num_symbols for _ in range(self.output_length)], device=images.device) # Begin masked
+        if labels is None:  # the model is being used in inference mdoe
+            labels = torch.tensor(
+                [self.num_symbols for _ in range(self.output_length)], device=images.device
+            )  # Begin masked
             batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=2)
             embeddings["decoder"] = self.embed_label(batch_labels)
 
             for index in range(self.output_length):
                 decoder_outputs = self.decoder(embeddings)
                 output_sequence = self.output(decoder_outputs["decoder"])
-                labels[:index + 1] = torch.max(output_sequence, dim=-1)[1][0, :index + 1]
+                labels[: index + 1] = torch.max(output_sequence, dim=-1)[1][0, : index + 1]
 
             loss = None
         else:

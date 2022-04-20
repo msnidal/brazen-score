@@ -1,6 +1,7 @@
 import os
 import errno
-#import pickle5 as pickle
+
+# import pickle5 as pickle
 import pickle
 import pathlib
 
@@ -12,7 +13,7 @@ from torchvision.transforms import functional as tvfunctional
 from torchvision import transforms as tvtransforms
 from PIL import Image
 
-NUM_SYMBOLS= 758
+NUM_SYMBOLS = 758
 SEQUENCE_DIM = 75
 RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
@@ -30,9 +31,7 @@ class PadToLargest:
         """Pad the given tensor on bottom and right sides to the max size with the given "pad" value"""
         delta_width = self.max_image_size[0] - tensor.shape[2]
         delta_height = self.max_image_size[1] - tensor.shape[1]
-        return tvfunctional.pad(
-            tensor, (0, 0, delta_width, delta_height), self.fill, self.padding_mode
-        )
+        return tvfunctional.pad(tensor, (0, 0, delta_width, delta_height), self.fill, self.padding_mode)
 
 
 class PrimusDataset(torchdata.Dataset):
@@ -54,9 +53,7 @@ class PrimusDataset(torchdata.Dataset):
 
     def __getitem__(self, index):
         image = self.get_score_image(self.scores[index])
-        label = self.get_score_label(
-            self.scores[index], encode_tokens=True, pad_length=True
-        )
+        label = self.get_score_label(self.scores[index], encode_tokens=True, pad_length=True)
 
         return image, label
 
@@ -83,9 +80,7 @@ class PrimusDataset(torchdata.Dataset):
 
         if pad_length:
             # special value of NUM_SYMBOLS is the empty padding value
-            length_pad = [
-                NUM_SYMBOLS for _ in range(self.max_label_length - len(label))
-            ]
+            length_pad = [NUM_SYMBOLS for _ in range(self.max_label_length - len(label))]
             label += length_pad
 
         torch_label = torch.tensor(label, dtype=torch.long)
@@ -124,9 +119,7 @@ class PrimusDataset(torchdata.Dataset):
         else:
             tokens = []
             for score in self.scores:
-                label = self.get_score_label(
-                    score, encode_tokens=False
-                )  # we can't do this until after this step
+                label = self.get_score_label(score, encode_tokens=False)  # we can't do this until after this step
                 for token in label:
                     if token not in tokens:
                         tokens.append(token)

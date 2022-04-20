@@ -22,6 +22,7 @@ from torch import cuda, nn, optim
 import torch
 import numpy as np
 
+
 def count_trainable_params(model):
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
@@ -60,15 +61,12 @@ def infer(model, inputs, token_map, labels=None):
 
 def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     """Bingus"""
-    #loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
+    # loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     model.train()
 
     if use_wandb:
-        train_config = {
-            "learning_rate": LEARNING_RATE,
-            "batch_size": BATCH_SIZE
-        }
+        train_config = {"learning_rate": LEARNING_RATE, "batch_size": BATCH_SIZE}
         model_config = vars(model.config)
         model_config.pop("self")
         wandb.init(project="brazen-score", entity="msnidal", config={**train_config, **model_config})
@@ -83,7 +81,7 @@ def train(model, train_loader, train_length, device, token_map, use_wandb=True):
         loss.backward()
         if use_wandb:
             wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
-        
+
         if index % EPOCH_SIZE == 0 and index != 0:
             optimizer.step()
             optimizer.zero_grad()
@@ -114,18 +112,12 @@ if __name__ == "__main__":
     token_map = primus_dataset.tokens
     train_size = int(0.8 * len(primus_dataset))
     test_size = len(primus_dataset) - train_size
-    train_dataset, test_dataset = torchdata.random_split(
-        primus_dataset, [train_size, test_size]
-    )
+    train_dataset, test_dataset = torchdata.random_split(primus_dataset, [train_size, test_size])
 
     train_length = len(train_dataset)
 
-    train_loader = torchdata.DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True
-    )
-    test_loader = torchdata.DataLoader(
-        test_dataset, batch_size=BATCH_SIZE, shuffle=True
-    )
+    train_loader = torchdata.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    test_loader = torchdata.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")
@@ -153,7 +145,7 @@ if __name__ == "__main__":
             model.load_state_dict(torch.load(selection))
             print("Done loading!")
             did_load = True
-        
+
     if not did_load:
         print("Training model...")
         train(model, train_loader, train_length, device, token_map)
@@ -162,5 +154,5 @@ if __name__ == "__main__":
         model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
         torch.save(model.state_dict(), model_path)
         print("Done saving model!")
-        
+
     test(model, test_loader, device, token_map)
