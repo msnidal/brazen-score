@@ -1,6 +1,7 @@
 import os
 import errno
-import pickle5 as pickle
+#import pickle5 as pickle
+import pickle
 import pathlib
 
 import pandas as pd
@@ -14,7 +15,7 @@ from PIL import Image
 NUM_SYMBOLS= 758
 SEQUENCE_DIM = 75
 RAW_IMAGE_SHAPE = (2048, 2048)
-IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
+IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 
 TOKEN_PATH = pathlib.Path("token.pickle")
 
