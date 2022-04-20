@@ -18,14 +18,14 @@ import dataset
 
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (8, 8)
-PATCH_DIM = 16
-ENCODER_EMBEDDING_DIM = 128  # roughly we want to increase dimensionality by the patch content for embeddings.
+PATCH_DIM = 8
+ENCODER_EMBEDDING_DIM = 64
 DECODER_EMBEDDING_DIM = 4096
-NUM_HEADS = 8
+NUM_HEADS = 4
 FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
-ENCODER_BLOCK_STAGES = (2, 2, 4, 2)  # Number of transformer blocks in each of the 4 stages
+ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
 NUM_DECODER_BLOCKS = 1 # Number of decoder blocks
-REDUCE_FACTOR = 2  # reduce factor (increase in patch size) in patch merging layer per stage
+REDUCE_FACTOR = 16  # reduce factor (increase in patch size) in patch merging layer per stage
 
 
 def init_weights(module):
@@ -438,7 +438,7 @@ class BrazenNet(nn.Module):
         encoder = OrderedDict()
         # Apply visual self-attention
         patch_reduction_multiples = [config.reduce_factor**index for index, _ in enumerate(config.encoder_block_stages)]
-        input_dim = [config.patch_dim ** 2] + [config.encoder_embedding_dim * patch_reduction_multiples[i+1] * 2 for i in range(len(config.encoder_block_stages) - 1)]
+        input_dim = [config.patch_dim ** 2] + [config.encoder_embedding_dim * patch_reduction_multiples[i+1] * config.reduce_factor for i in range(len(config.encoder_block_stages) - 1)]
         for index, num_blocks in enumerate(config.encoder_block_stages):
             # Apply sequential swin transformer blocks, reducing the number of patches for each stage
             apply_merge = index > 0
@@ -515,6 +515,6 @@ class BrazenNet(nn.Module):
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs["decoder"])
-            loss = functional.nll_loss(output_sequence.transpose(2, 1), labels, ignore_index=self.num_symbols)
+            loss = functional.nll_loss(output_sequence.transpose(2, 1), labels, reduction="sum")
 
         return output_sequence, loss

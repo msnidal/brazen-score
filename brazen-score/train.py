@@ -65,13 +65,13 @@ def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     model.train()
 
     if use_wandb:
-        wandb.init(project="brazen-score", entity="msnidal")
         train_config = {
             "learning_rate": LEARNING_RATE,
             "batch_size": BATCH_SIZE
         }
-        model_config = vars(model)
-        wandb.config = {**train_config, **model_config}
+        model_config = vars(model.config)
+        model_config.pop("self")
+        wandb.init(project="brazen-score", entity="msnidal", config={**train_config, **model_config})
         wandb.watch(model)
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
