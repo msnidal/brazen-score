@@ -58,21 +58,21 @@ def infer(model, inputs, token_map, labels=None):
     return {"raw": outputs[0], "indices": label_indices[0], "labels": labels[0], "loss": loss}
 
 
-def train(model, train_loader, train_length, device, token_map):
+def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     """Bingus"""
     #loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-
-    #wandb.init(project="brazen-score", entity="msnidal")
-    train_config = {
-        "learning_rate": LEARNING_RATE,
-        "batch_size": BATCH_SIZE
-    }
-    model_config = vars(model)
-    #wandb.config = {**train_config, **model_config}
-
     model.train()
-    #wandb.watch(model)
+
+    if use_wandb:
+        wandb.init(project="brazen-score", entity="msnidal")
+        train_config = {
+            "learning_rate": LEARNING_RATE,
+            "batch_size": BATCH_SIZE
+        }
+        model_config = vars(model)
+        wandb.config = {**train_config, **model_config}
+        wandb.watch(model)
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
         inputs, labels = inputs.to(device), labels.to(device)
@@ -81,7 +81,8 @@ def train(model, train_loader, train_length, device, token_map):
         prediction = outputs["raw"]
         loss = outputs["loss"]
         loss.backward()
-        #wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
+        if use_wandb:
+            wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
         
         if index % EPOCH_SIZE == 0 and index != 0:
             optimizer.step()
