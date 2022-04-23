@@ -14,6 +14,7 @@ import numpy as np
 
 import utils
 import dataset
+import train
 
 
 # Following (horizontal, vertical) coordinates
@@ -57,6 +58,9 @@ class BrazenParameters:
         reduce_factor=REDUCE_FACTOR,
         output_sequence_dim=dataset.SEQUENCE_DIM,
         num_symbols=dataset.NUM_SYMBOLS,
+        eps=train.EPS,
+        betas=train.BETAS,
+        learning_rate=train.LEARNING_RATE
     ):
         params = locals()
         for param in params:
@@ -541,7 +545,6 @@ class BrazenNet(nn.Module):
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs["decoder"])
-            loss = functional.cross_entropy(output_sequence, labels, reduction="mean", ignore_index=self.num_symbols)
-            #loss = functional.nll_loss(output_sequence.transpose(2, 1), labels, reduction="sum")
+            loss = functional.cross_entropy(output_sequence.transpose(2, 1), labels, reduction="mean", ignore_index=self.num_symbols)
 
         return output_sequence, loss

@@ -9,12 +9,14 @@ import wandb
 
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
-BATCH_SIZE = 1
-EPOCH_SIZE = 32
+BATCH_SIZE = 2
+EPOCH_SIZE = 16
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 MODEL_FOLDER = Path("models")
 LEARNING_RATE = 1e-3
+BETAS = (0.9, 0.98)
+EPS = 1e-9
 
 from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
@@ -62,7 +64,7 @@ def infer(model, inputs, token_map, labels=None):
 def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     """Bingus"""
     # loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.SparseAdam(model.parameters(), lr=LEARNING_RATE, betas=BETAS, eps=EPS)
     model.train()
 
     if use_wandb:
