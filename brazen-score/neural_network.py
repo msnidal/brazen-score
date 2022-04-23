@@ -20,7 +20,7 @@ import dataset
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 64
-DECODER_EMBEDDING_DIM = 4096
+DECODER_EMBEDDING_DIM = 1024
 NUM_HEADS = 4
 FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
@@ -500,7 +500,7 @@ class BrazenNet(nn.Module):
         # Map transformer outputs to sequence of symbols
         output = OrderedDict()
         output["linear_out"] = nn.Linear(config.decoder_embedding_dim, config.num_symbols + 1)
-        output["softmax"] = nn.LogSoftmax(dim=-1)
+        #output["softmax"] = nn.LogSoftmax(dim=-1)
 
         self.output = nn.Sequential(output)
 
@@ -541,6 +541,7 @@ class BrazenNet(nn.Module):
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs["decoder"])
-            loss = functional.nll_loss(output_sequence.transpose(2, 1), labels, reduction="sum")
+            loss = functional.cross_entropy(output_sequence, labels, reduction="mean", ignore_index=self.num_symbols)
+            #loss = functional.nll_loss(output_sequence.transpose(2, 1), labels, reduction="sum")
 
         return output_sequence, loss

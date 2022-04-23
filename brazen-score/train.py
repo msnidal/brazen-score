@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     if not did_load:
         print("Training model...")
-        train(model, train_loader, train_length, device, token_map)
+        train(model, train_loader, train_length, device, token_map, use_wandb=False)
         print("Done training!")
         print("Saving model...")
         model_path = MODEL_FOLDER / f"{time.ctime()}.pth"

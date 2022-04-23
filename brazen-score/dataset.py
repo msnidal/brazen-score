@@ -13,12 +13,13 @@ from torchvision.transforms import functional as tvfunctional
 from torchvision import transforms as tvtransforms
 from PIL import Image
 
-NUM_SYMBOLS = 758
-SEQUENCE_DIM = 75
+LABEL_MODE = "semantic"
+NUM_SYMBOLS = 758 if LABEL_MODE == "agnostic" else 1781
+SEQUENCE_DIM = 75 if LABEL_MODE == "agnostic" else 58
 RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 
-TOKEN_PATH = pathlib.Path("token.pickle")
+TOKEN_PATH = pathlib.Path(f"tokens_{LABEL_MODE}.pickle")
 
 
 class PadToLargest:
@@ -41,7 +42,7 @@ class PrimusDataset(torchdata.Dataset):
 
         self.root_path = root_path
         self.scores = [score.name for score in root_path.iterdir() if score.is_dir()]
-        self.max_label_length = SEQUENCE_DIM  # self.get_max_label_length()
+        self.max_label_length = self.get_max_label_length()
 
         self.tokens = self.get_token_mapping()
 
@@ -69,7 +70,7 @@ class PrimusDataset(torchdata.Dataset):
 
     def get_score_label(self, score, encode_tokens=False, pad_length=False):
         """Get the vectorized, agnostic label for a score."""
-        agnostic_label_file = self.root_path / score / (score + ".agnostic")
+        agnostic_label_file = self.root_path / score / (score + ".semantic")
 
         with agnostic_label_file.open() as text:
             raw_label = text.read()
@@ -78,13 +79,15 @@ class PrimusDataset(torchdata.Dataset):
         if encode_tokens:
             label = [self.tokens.index(token) for token in label]
 
-        if pad_length:
-            # special value of NUM_SYMBOLS is the empty padding value
-            length_pad = [NUM_SYMBOLS for _ in range(self.max_label_length - len(label))]
-            label += length_pad
+            if pad_length:
+                # special value of NUM_SYMBOLS is the empty padding value
+                length_pad = [NUM_SYMBOLS for _ in range(self.max_label_length - len(label))]
+                label += length_pad
 
-        torch_label = torch.tensor(label, dtype=torch.long)
-        return torch_label
+            label = torch.tensor(label, dtype=torch.long)
+            
+
+        return label
 
     def get_max_image_size(self):
         """Get the maximum size of the score images."""
@@ -112,7 +115,6 @@ class PrimusDataset(torchdata.Dataset):
     def get_token_mapping(self):
         """Load or create the token mapping if it does not already exist."""
 
-        max_length = 0
         if TOKEN_PATH.exists():
             with open(str(TOKEN_PATH), "rb") as handle:
                 tokens = pickle.load(handle)

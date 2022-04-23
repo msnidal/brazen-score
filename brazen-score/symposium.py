@@ -263,16 +263,18 @@ class Symposium:
         }
         measures = [random.choice(measure_choices["treble"]) for _ in range(config["num_measures"])]
 
+        # Transpose measures in-place
         transpose_sequence = get_transpose_sequence(config["num_measures"])
-        transposed_measures = [abjad.mutate.transpose(measure, transpose_sequence[index]) for index, measure in enumerate(measures)]
+        for index, measure in enumerate(measures):
+            abjad.mutate.transpose(measure, transpose_sequence[index])
 
         # transpose each measure differently to increase domain
         key_signature = abjad.KeySignature(abjad.NamedPitchClass(config["key_pitch"] + config["key_accidental"]), abjad.Mode(config["key_mode"]))
         time_signature = abjad.TimeSignature(config["time_signature"])
 
-        voice = abjad.Voice()
-        staff = abjad.Staff([voice])
-        score = abjad.Score([staff])
+        voice = abjad.Voice(name="treble_voice")
+        staff = abjad.Staff([voice], name="treble_staff")
+        score = abjad.Score([staff], name="score")
 
         for measure in measures:
             voice.extend(measure)
@@ -280,6 +282,7 @@ class Symposium:
         treble_start = abjad.get.leaf(voice, 0)
         abjad.attach(time_signature, treble_start)
         label = "" # TODO: need ot fill this out
+        # clef -> key signature -> time signature -> [rest-length | barline | note- ]
 
         return score, label
 
