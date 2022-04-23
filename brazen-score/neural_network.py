@@ -546,7 +546,7 @@ class BrazenNet(nn.Module):
         else:
             # Shift right
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
-            labels[:, 0] = dataset.BEGINNING_OF_SEQUENCE
+            shifted_labels[:, 0] = dataset.BEGINNING_OF_SEQUENCE
 
             embeddings["decoder"] = self.embed_label(shifted_labels)
 
