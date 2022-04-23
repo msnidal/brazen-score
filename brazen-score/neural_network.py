@@ -58,6 +58,11 @@ class BrazenParameters:
         reduce_factor=REDUCE_FACTOR,
         output_sequence_dim=dataset.SEQUENCE_DIM,
         num_symbols=dataset.NUM_SYMBOLS,
+        beginning_of_sequence=dataset.BEGINNING_OF_SEQUENCE,
+        end_of_sequence=dataset.END_OF_SEQUENCE,
+        padding_symbol=dataset.PADDING_SYMBOL,
+        total_symbols=dataset.TOTAL_SYMBOLS,
+        batch_size=train.BATCH_SIZE,
         eps=train.EPS,
         betas=train.BETAS,
         learning_rate=train.LEARNING_RATE
@@ -396,7 +401,7 @@ class DecoderBlock(nn.Module):
 
         self.output_length = output_length
 
-        attention_mask = torch.tensor(np.triu(np.full((output_length, output_length), True), 0).astype(np.bool))
+        attention_mask = torch.tensor(np.triu(np.full((output_length, output_length), True), 1).astype(np.bool))
         self.output_attention = MultiHeadAttention(embedding_dim, 8, attention_mask, shape_prefix="batch")
         self.output_attention_norm = nn.LayerNorm(embedding_dim)
 
@@ -412,7 +417,6 @@ class DecoderBlock(nn.Module):
         self.feed_forward_norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, embeddings: dict):
-        # output_sequence = torch.tensor([float("-inf") for _ in range(self.output_length)]) # Begin masked
         output_attention = self.output_attention_norm(
             embeddings["decoder"]
             + self.output_attention(embeddings["decoder"], embeddings["decoder"], embeddings["decoder"])
@@ -489,21 +493,20 @@ class BrazenNet(nn.Module):
         )
         self.embed_encoder_output = nn.Sequential(encoder_embeddings)
 
-        self.output_length = config.output_sequence_dim
-        self.num_symbols = config.num_symbols
+        self.output_length = config.output_sequence_dim + 1 # EOS symbol
 
         self.embed_label = nn.Embedding(
-            config.num_symbols + 1, config.decoder_embedding_dim, padding_idx=config.num_symbols
+            config.total_symbols, config.decoder_embedding_dim, padding_idx=config.padding_symbol
         )
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
-            decoder["block_{}".format(index)] = DecoderBlock(config.output_sequence_dim, config.decoder_embedding_dim)
+            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim)
         self.decoder = nn.Sequential(decoder)
 
         # Map transformer outputs to sequence of symbols
         output = OrderedDict()
-        output["linear_out"] = nn.Linear(config.decoder_embedding_dim, config.num_symbols + 1)
+        output["linear_out"] = nn.Linear(config.decoder_embedding_dim, config.total_symbols)
         #output["softmax"] = nn.LogSoftmax(dim=-1)
 
         self.output = nn.Sequential(output)
@@ -529,9 +532,9 @@ class BrazenNet(nn.Module):
 
         if labels is None:  # the model is being used in inference mdoe
             labels = torch.tensor(
-                [self.num_symbols for _ in range(self.output_length)], device=images.device
+                [self.beginning_of_sequence if index == 0 else self.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
-            batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=2)
+            batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
             embeddings["decoder"] = self.embed_label(batch_labels)
 
             for index in range(self.output_length):
@@ -541,7 +544,11 @@ class BrazenNet(nn.Module):
 
             loss = None
         else:
-            embeddings["decoder"] = self.embed_label(labels)
+            # Shift right
+            shifted_labels = torch.roll(labels, shifts=1, dims=-1)
+            labels[:, 0] = dataset.BEGINNING_OF_SEQUENCE
+
+            embeddings["decoder"] = self.embed_label(shifted_labels)
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs["decoder"])

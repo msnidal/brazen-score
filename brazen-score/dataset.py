@@ -15,6 +15,12 @@ from PIL import Image
 LABEL_MODE = "semantic"
 NUM_SYMBOLS = 758 if LABEL_MODE == "agnostic" else 1781
 SEQUENCE_DIM = 75 if LABEL_MODE == "agnostic" else 58
+
+BEGINNING_OF_SEQUENCE = NUM_SYMBOLS
+END_OF_SEQUENCE = NUM_SYMBOLS + 1
+PADDING_SYMBOL = NUM_SYMBOLS + 2
+TOTAL_SYMBOLS = NUM_SYMBOLS + 3
+
 RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 
@@ -80,7 +86,7 @@ class PrimusDataset(torchdata.Dataset):
 
             if pad_length:
                 # special value of NUM_SYMBOLS is the empty padding value
-                length_pad = [NUM_SYMBOLS for _ in range(self.max_label_length - len(label))]
+                length_pad = [END_OF_SEQUENCE] + [PADDING_SYMBOL for index in range(self.max_label_length - len(label))]
                 label += length_pad
 
             label = torch.tensor(label, dtype=torch.long)

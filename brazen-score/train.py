@@ -2,15 +2,15 @@ from pathlib import Path
 import os
 import time
 
-from dataset import PrimusDataset, NUM_SYMBOLS
+import dataset
 import neural_network
 
 import wandb
 
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
-BATCH_SIZE = 2
-EPOCH_SIZE = 16
+BATCH_SIZE = 32
+EPOCH_SIZE = 1
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 MODEL_FOLDER = Path("models")
@@ -52,7 +52,11 @@ def infer(model, inputs, token_map, labels=None):
     for batch in label_indices:
         batch_labels = []
         for index in batch:
-            if index == NUM_SYMBOLS:
+            if index == dataset.END_OF_SEQUENCE:
+                batch_labels.append("EOS")
+            elif index == dataset.BEGINNING_OF_SEQUENCE:
+                batch_labels.append("BOS")
+            elif index == dataset.PADDING_SYMBOL:
                 batch_labels.append("")
             else:
                 batch_labels.append(token_map[index])
@@ -63,15 +67,13 @@ def infer(model, inputs, token_map, labels=None):
 
 def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     """Bingus"""
-    # loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=BETAS, eps=EPS)
     model.train()
 
     if use_wandb:
-        train_config = {"learning_rate": LEARNING_RATE, "batch_size": BATCH_SIZE}
         model_config = vars(model.config)
         model_config.pop("self")
-        wandb.init(project="brazen-score", entity="msnidal", config={**train_config, **model_config})
+        wandb.init(project="brazen-score", entity="msnidal", config=model_config)
         wandb.watch(model)
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
@@ -82,11 +84,12 @@ def train(model, train_loader, train_length, device, token_map, use_wandb=True):
         loss = outputs["loss"]
         loss.backward()
         if use_wandb:
-            wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
+            #wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
+            wandb.log({"loss": loss, "epoch": index})
 
-        if index % EPOCH_SIZE == 0 and index != 0:
-            optimizer.step()
-            optimizer.zero_grad()
+        #if index % EPOCH_SIZE == 0 and index != 0:
+        optimizer.step()
+        optimizer.zero_grad()
 
 
 def test(model, test_loader, device, token_map):
@@ -110,7 +113,7 @@ if __name__ == "__main__":
     # Create, split dataset into train & test
     torch.manual_seed(0)
 
-    primus_dataset = PrimusDataset(PRIMUS_PATH)
+    primus_dataset = dataset.PrimusDataset(PRIMUS_PATH)
     token_map = primus_dataset.tokens
     train_size = int(0.8 * len(primus_dataset))
     test_size = len(primus_dataset) - train_size
