@@ -62,7 +62,7 @@ def infer(model, inputs, token_map, labels=None):
                 batch_labels.append(token_map[index])
         labels.append(batch_labels)
 
-    return {"raw": outputs[0], "indices": label_indices[0], "labels": labels[0], "loss": loss}
+    return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
 
 
 def train(model, train_loader, train_length, device, token_map, use_wandb=True):
