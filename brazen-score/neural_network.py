@@ -396,7 +396,7 @@ class DecoderBlock(nn.Module):
 
         self.output_length = output_length
 
-        attention_mask = torch.tensor(np.triu(np.full((output_length, output_length), True), 1).astype(np.bool))
+        attention_mask = torch.tensor(np.triu(np.full((output_length, output_length), True), 0).astype(np.bool))
         self.output_attention = MultiHeadAttention(embedding_dim, 8, attention_mask, shape_prefix="batch")
         self.output_attention_norm = nn.LayerNorm(embedding_dim)
 
@@ -545,6 +545,6 @@ class BrazenNet(nn.Module):
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs["decoder"])
-            loss = functional.cross_entropy(output_sequence.transpose(2, 1), labels, reduction="mean", ignore_index=self.num_symbols)
+            loss = functional.cross_entropy(output_sequence.transpose(2, 1), labels, reduction="mean")
 
         return output_sequence, loss

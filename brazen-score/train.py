@@ -64,7 +64,7 @@ def infer(model, inputs, token_map, labels=None):
 def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     """Bingus"""
     # loss_function = nn.NLLLoss(ignore_index=NUM_SYMBOLS)
-    optimizer = optim.SparseAdam(model.parameters(), lr=LEARNING_RATE, betas=BETAS, eps=EPS)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=BETAS, eps=EPS)
     model.train()
 
     if use_wandb:
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
     if not did_load:
         print("Training model...")
-        train(model, train_loader, train_length, device, token_map, use_wandb=False)
+        train(model, train_loader, train_length, device, token_map, use_wandb=True)
         print("Done training!")
         print("Saving model...")
         model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
