@@ -20,7 +20,7 @@ import train
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
-ENCODER_EMBEDDING_DIM = 64
+ENCODER_EMBEDDING_DIM = 128
 DECODER_EMBEDDING_DIM = 1024
 NUM_HEADS = 4
 FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
@@ -532,7 +532,7 @@ class BrazenNet(nn.Module):
 
         if labels is None:  # the model is being used in inference mdoe
             labels = torch.tensor(
-                [self.beginning_of_sequence if index == 0 else self.padding_symbol for index in range(self.output_length)], device=images.device
+                [self.config.beginning_of_sequence if index == 0 else self.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
             batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
             embeddings["decoder"] = self.embed_label(batch_labels)
@@ -546,7 +546,7 @@ class BrazenNet(nn.Module):
         else:
             # Shift right
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
-            shifted_labels[:, 0] = dataset.BEGINNING_OF_SEQUENCE
+            shifted_labels[:, 0] = self.config.beginning_of_sequence
 
             embeddings["decoder"] = self.embed_label(shifted_labels)
 
