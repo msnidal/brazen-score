@@ -12,19 +12,9 @@ from torchvision.transforms import functional as tvfunctional
 from torchvision import transforms as tvtransforms
 from PIL import Image
 
-LABEL_MODE = "semantic"
-NUM_SYMBOLS = 758 if LABEL_MODE == "agnostic" else 1781
-SEQUENCE_DIM = 75 if LABEL_MODE == "agnostic" else 58
+import parameters
 
-BEGINNING_OF_SEQUENCE = NUM_SYMBOLS
-END_OF_SEQUENCE = NUM_SYMBOLS + 1
-PADDING_SYMBOL = NUM_SYMBOLS + 2
-TOTAL_SYMBOLS = NUM_SYMBOLS + 3
-
-RAW_IMAGE_SHAPE = (2048, 2048)
-IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
-
-TOKEN_PATH = pathlib.Path(f"tokens_{LABEL_MODE}.pickle")
+TOKEN_PATH = pathlib.Path(f"tokens_{parameters.LABEL_MODE}.pickle")
 
 
 class PadToLargest:
@@ -51,7 +41,7 @@ class PrimusDataset(torchdata.Dataset):
 
         self.tokens = self.get_token_mapping()
 
-        transforms = [PadToLargest(RAW_IMAGE_SHAPE, 255), tvtransforms.Resize(IMAGE_SHAPE)] + transforms
+        transforms = [PadToLargest(parameters.RAW_IMAGE_SHAPE, 255), tvtransforms.Resize(parameters.IMAGE_SHAPE)] + transforms
         self.transforms = tvtransforms.Compose(transforms)
 
     def __len__(self):
@@ -86,7 +76,7 @@ class PrimusDataset(torchdata.Dataset):
 
             if pad_length:
                 # special value of NUM_SYMBOLS is the empty padding value
-                length_pad = [END_OF_SEQUENCE] + [PADDING_SYMBOL for index in range(self.max_label_length - len(label))]
+                length_pad = [parameters.END_OF_SEQUENCE] + [parameters.PADDING_SYMBOL for index in range(self.max_label_length - len(label))]
                 label += length_pad
 
             label = torch.tensor(label, dtype=torch.long)

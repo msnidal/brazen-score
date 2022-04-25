@@ -2,27 +2,22 @@ from pathlib import Path
 import os
 import time
 
+from matplotlib import pyplot as plt
+from torch.utils import data as torchdata
+from torch import cuda, optim
+import torch
+import numpy as np
+import wandb
+
 import dataset
 import neural_network
-
-import wandb
+import parameters
 
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
-BATCH_SIZE = 16
-EPOCH_SIZE = 1
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 MODEL_FOLDER = Path("models")
-LEARNING_RATE = 1e-3
-BETAS = (0.9, 0.98)
-EPS = 1e-9
-
-from matplotlib import pyplot as plt
-from torch.utils import data as torchdata
-from torch import cuda, nn, optim
-import torch
-import numpy as np
 
 
 def count_trainable_params(model):
@@ -52,9 +47,9 @@ def infer(model, inputs, token_map, labels=None):
     for batch in label_indices:
         batch_labels = []
         for index in batch:
-            if index == dataset.END_OF_SEQUENCE:
+            if index == parameters.END_OF_SEQUENCE:
                 batch_labels.append("EOS")
-            elif index == dataset.BEGINNING_OF_SEQUENCE:
+            elif index == parameters.BEGINNING_OF_SEQUENCE:
                 batch_labels.append("BOS")
             elif index == dataset.PADDING_SYMBOL:
                 batch_labels.append("")
@@ -67,7 +62,7 @@ def infer(model, inputs, token_map, labels=None):
 
 def train(model, train_loader, train_length, device, token_map, use_wandb=True):
     """Bingus"""
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=BETAS, eps=EPS)
+    optimizer = optim.Adam(model.parameters(), lr=parameters.LEARNING_RATE, betas=parameters.BETAS, eps=parameters.EPS)
     model.train()
 
     if use_wandb:
@@ -121,8 +116,8 @@ if __name__ == "__main__":
 
     train_length = len(train_dataset)
 
-    train_loader = torchdata.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    test_loader = torchdata.DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = torchdata.DataLoader(train_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True)
+    test_loader = torchdata.DataLoader(test_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True)
 
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")

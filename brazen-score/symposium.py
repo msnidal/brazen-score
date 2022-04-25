@@ -2,6 +2,8 @@ import random
 import string 
 
 import abjad
+import dataset
+import train
 
 # Measure choices from https://abjad.github.io/examples/corpus-selection.html
 MEASURE_CHOICES = [
@@ -200,11 +202,13 @@ MEASURE_CHOICES = [
     ]
 ]
 
-PITCHES = string.ascii_uppercase[:8]
+PITCHES = string.ascii_uppercase[:7]
 ACCIDENTALS = ["", "b", "#"]
-TIME_SIGNATURES = ((4, 4), (3, 8), (2, 8), (5, 8), (6, 8), (7, 8), (9, 8), (12, 8))
+CLEFS = ["treble", "bass"]
+TIME_SIGNATURES = {"numerator": (2, 3, 4, 8), "denominator": (2, 4, 8)}
 TRANSPOSE_RANGE = [-5, 5]
 NUM_MEASURES = [4, 8]
+DURATIONS = {1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 32: "thirty_second"}
 
 def generate_fragment():
     """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
@@ -239,29 +243,60 @@ def get_transpose_sequence(num_measures:int=NUM_MEASURES[0]):
 
 
 class Symposium:
-    def __init__(self):
-        pass
+    def __init__(self, seed:int=None):
+        random.seed(seed)
 
-    def generate_score(self, seed:int=None):
+    def get_label_token(self, leaf):
+        if type(leaf) == abjad.Note:
+            label = leaf.written_pitch.pitch_class.pitch_class_label
+            octave = leaf.written_pitch.octave.number
+            duration = DURATIONS[leaf.written_duration.denominator]
+
+            token = f"note-{label}{octave}_{duration}"
+        elif type(leaf) == abjad.Chord:
+            token_segments = []
+            for pitch in leaf.written_pitches:
+                label = pitch.pitch_class.pitch_class_label
+                octave = pitch.octave.number
+
+                token_segments.append(f"{label}{octave}")
+
+            chord_token = "_".join(token_segments)
+            duration = DURATIONS[leaf.written_duration.denominator]
+            token = f"chord-{chord_token}_{duration}"
+        elif type(leaf) == abjad.Rest:
+            duration = DURATIONS[leaf.written_duration.denominator]
+            if leaf.written_duration.numerator != 1:
+                breakpoint()
+            token = f"rest-{duration}"
+        else:
+            breakpoint()
+        
+        return token
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
         """ Generate a random score using Mozart's dice game 
         For more details see https://abjad.github.io/examples/corpus-selection.html
         """
-        random.seed(seed)
 
         config = {
-            "key_mode": random.choice(["major", "minor"]),
+            "key_mode": "major", # random.choice(["major", "minor"]),
             "key_pitch": random.choice(PITCHES),
             "key_accidental": random.choice(ACCIDENTALS),
-            "time_signature": random.choice(TIME_SIGNATURES),
+            "time_signature": (random.choice(TIME_SIGNATURES["numerator"]), random.choice(TIME_SIGNATURES["denominator"])),
             "transpose_sequence": random.choice(TRANSPOSE_RANGE),
-            "num_measures": random.randint(NUM_MEASURES[0], NUM_MEASURES[1])
+            "num_measures": random.randint(NUM_MEASURES[0], NUM_MEASURES[1]),
+            "clef": random.choice(CLEFS)
         }
         
         measure_choices = {
-            "bass": [abjad.Container(measure[0]) for measure_group in MEASURE_CHOICES for measure in measure_group],
-            "treble": [abjad.Container(measure[1]) for measure_group in MEASURE_CHOICES for measure in measure_group]
+            "treble": [measure[1] for measure_group in MEASURE_CHOICES for measure in measure_group],
+            "bass": [measure[0] for measure_group in MEASURE_CHOICES for measure in measure_group]
         }
-        measures = [random.choice(measure_choices["treble"]) for _ in range(config["num_measures"])]
+        measures = [abjad.Container(random.choice(measure_choices[config["clef"]]), name=f"measure_{index}") for index in range(config["num_measures"])]
 
         # Transpose measures in-place
         transpose_sequence = get_transpose_sequence(config["num_measures"])
@@ -272,22 +307,41 @@ class Symposium:
         key_signature = abjad.KeySignature(abjad.NamedPitchClass(config["key_pitch"] + config["key_accidental"]), abjad.Mode(config["key_mode"]))
         time_signature = abjad.TimeSignature(config["time_signature"])
 
-        voice = abjad.Voice(name="treble_voice")
-        staff = abjad.Staff([voice], name="treble_staff")
+        voice = abjad.Voice(name="voice")
+        staff = abjad.Staff([voice], name="staff")
         score = abjad.Score([staff], name="score")
 
         for measure in measures:
             voice.extend(measure)
         
-        treble_start = abjad.get.leaf(voice, 0)
-        abjad.attach(time_signature, treble_start)
-        label = "" # TODO: need ot fill this out
-        # clef -> key signature -> time signature -> [rest-length | barline | note- ]
+        voice_start = abjad.get.leaf(voice, 0)
+        clef = abjad.Clef(config["clef"])
+        abjad.attach(clef, voice_start)
+        abjad.attach(time_signature, voice_start)
+        abjad.attach(key_signature, voice_start)
+
+        label = []
+        label.append("clef-G1" if config["clef"] == "treble" else "clef-F4")
+        label.append(f"keySignature-{config['key_pitch']}{config['key_accidental']}M")
+        label.append(f"timeSignature-{config['time_signature'][0]}/{config['time_signature'][1]}")
+
+        time_accumulator = abjad.Duration(0)
+        signature_duration = abjad.Duration(config["time_signature"])
+
+        for leaf in voice:
+            token = self.get_label_token(leaf)
+            label.append(token)
+
+            time_accumulator += leaf.written_duration
+            if time_accumulator % signature_duration == abjad.Duration(0):
+                label.append("barline")
 
         return score, label
 
 
 if __name__ == "__main__":
+    primus = dataset.PrimusDataset(train.PRIMUS_PATH)
+
     symposium = Symposium()
-    score, label = symposium.generate_score(seed=0)
+    score, label = next(symposium)
     abjad.show(score)

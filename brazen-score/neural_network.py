@@ -15,18 +15,8 @@ import numpy as np
 import utils
 import dataset
 import train
+import parameters
 
-
-# Following (horizontal, vertical) coordinates
-WINDOW_PATCH_SHAPE = (8, 8)
-PATCH_DIM = 8
-ENCODER_EMBEDDING_DIM = 128
-DECODER_EMBEDDING_DIM = 1024
-NUM_HEADS = 4
-FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
-ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
-NUM_DECODER_BLOCKS = 1  # Number of decoder blocks
-REDUCE_FACTOR = 16  # reduce factor (increase in patch size) in patch merging layer per stage
 
 
 def init_weights(module):
@@ -41,35 +31,6 @@ def init_weights(module):
         nn.init.uniform_(module.weight, -1.0, 1.0)
     elif isinstance(module, nn.parameter.Parameter):
         nn.init.trunc_normal_(module, 0.0, std=0.02)
-
-
-class BrazenParameters:
-    def __init__(
-        self,
-        window_patch_shape=WINDOW_PATCH_SHAPE,
-        image_shape=dataset.IMAGE_SHAPE,
-        patch_dim=PATCH_DIM,
-        encoder_embedding_dim=ENCODER_EMBEDDING_DIM,
-        decoder_embedding_dim=DECODER_EMBEDDING_DIM,
-        num_heads=NUM_HEADS,
-        feed_forward_expansion=FEED_FORWARD_EXPANSION,
-        encoder_block_stages=ENCODER_BLOCK_STAGES,
-        num_decoder_blocks=NUM_DECODER_BLOCKS,
-        reduce_factor=REDUCE_FACTOR,
-        output_sequence_dim=dataset.SEQUENCE_DIM,
-        num_symbols=dataset.NUM_SYMBOLS,
-        beginning_of_sequence=dataset.BEGINNING_OF_SEQUENCE,
-        end_of_sequence=dataset.END_OF_SEQUENCE,
-        padding_symbol=dataset.PADDING_SYMBOL,
-        total_symbols=dataset.TOTAL_SYMBOLS,
-        batch_size=train.BATCH_SIZE,
-        eps=train.EPS,
-        betas=train.BETAS,
-        learning_rate=train.LEARNING_RATE
-    ):
-        params = locals()
-        for param in params:
-            setattr(self, param, params[param])
 
 
 class MultiHeadAttention(nn.Module):
@@ -168,10 +129,10 @@ class SwinSelfAttention(nn.Module):
     """Implements locality self attention from https://arxiv.org/pdf/2112.13492.pdf"""
 
     _bias_index_pairs = torch.tensor(
-        [[i, j] for i in range(WINDOW_PATCH_SHAPE[0]) for j in range(WINDOW_PATCH_SHAPE[1])],
+        [[i, j] for i in range(parameters.WINDOW_PATCH_SHAPE[0]) for j in range(parameters.WINDOW_PATCH_SHAPE[1])],
         requires_grad=False,
     )
-    _mask_view_indices = _bias_index_pairs[:, None, :] - _bias_index_pairs[None, :, :] + WINDOW_PATCH_SHAPE[0] - 1
+    _mask_view_indices = _bias_index_pairs[:, None, :] - _bias_index_pairs[None, :, :] + parameters.WINDOW_PATCH_SHAPE[0] - 1
     _position_bias_indices = _mask_view_indices[:, :, 0], _mask_view_indices[:, :, 1]
 
     @property
@@ -226,8 +187,8 @@ class SwinSelfAttention(nn.Module):
         self,
         embedding_dim: int,
         window_shape: tuple,
-        patch_shape: tuple = WINDOW_PATCH_SHAPE,
-        num_heads: int = NUM_HEADS,
+        patch_shape: tuple = parameters.WINDOW_PATCH_SHAPE,
+        num_heads: int = parameters.NUM_HEADS,
         apply_shift: tuple = None,
     ):
         super().__init__()
@@ -257,9 +218,9 @@ class SwinTransformerBlock(nn.Module):
         embedding_dim: int,
         patch_dim: int,
         apply_shift: bool = False,
-        feed_forward_expansion: int = FEED_FORWARD_EXPANSION,
-        image_shape: tuple = dataset.IMAGE_SHAPE,
-        patch_shape: tuple = WINDOW_PATCH_SHAPE,
+        feed_forward_expansion: int = parameters.FEED_FORWARD_EXPANSION,
+        image_shape: tuple = parameters.IMAGE_SHAPE,
+        patch_shape: tuple = parameters.WINDOW_PATCH_SHAPE,
     ):
         super().__init__()
         for index, _ in enumerate(image_shape):
@@ -349,10 +310,10 @@ class SwinTransformerStage(nn.Module):
         input_dim: int,
         num_blocks: int = 2,
         apply_merge: bool = True,
-        patch_dim: int = PATCH_DIM,
-        image_shape: tuple = dataset.IMAGE_SHAPE,
-        patch_shape: tuple = WINDOW_PATCH_SHAPE,
-        merge_reduce_factor: int = REDUCE_FACTOR,
+        patch_dim: int = parameters.PATCH_DIM,
+        image_shape: tuple = parameters.IMAGE_SHAPE,
+        patch_shape: tuple = parameters.WINDOW_PATCH_SHAPE,
+        merge_reduce_factor: int = parameters.REDUCE_FACTOR,
     ):
         super().__init__()
 
@@ -396,7 +357,7 @@ class SwinTransformerStage(nn.Module):
 class DecoderBlock(nn.Module):
     """Decode all of the tokens in the output sequence as well as the Swin self-attention output"""
 
-    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int = FEED_FORWARD_EXPANSION):
+    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int = parameters.FEED_FORWARD_EXPANSION):
         super().__init__()
 
         self.output_length = output_length
@@ -436,7 +397,7 @@ class BrazenNet(nn.Module):
 
     def __init__(
         self,
-        config: BrazenParameters,
+        config: parameters.BrazenParameters,
     ):
         super().__init__()
         self.config = config
