@@ -1,9 +1,23 @@
 import random
-import string 
+import string
+from tokenize import String 
+from pathlib import Path
+import hashlib
+import functools
+import pickle
 
+from PIL import Image
+import fitz
+
+import torch
+from torchvision import transforms as tvtransforms
 import abjad
+from abjad.io import Illustrator
 import dataset
 import train
+
+from dataset import PadToLargest
+import parameters
 
 # Measure choices from https://abjad.github.io/examples/corpus-selection.html
 MEASURE_CHOICES = [
@@ -209,6 +223,9 @@ TIME_SIGNATURES = {"numerator": (2, 3, 4, 8), "denominator": (2, 4, 8)}
 TRANSPOSE_RANGE = [-5, 5]
 NUM_MEASURES = [4, 8]
 DURATIONS = {1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 32: "thirty_second"}
+OUTPUT_DIRECTORY = "scores"
+TOKEN_MAPPING_PATH = Path(f"symposium_tokens.pickle")
+MAX_LENGTH = 75
 
 def generate_fragment():
     """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
@@ -224,6 +241,11 @@ def generate_fragment():
     
     return notes
         
+def extract_timestamp(file_name, identifier_token):
+    """ Extract a timestamp from an abjad-generated score filename """
+    timestamp = file_name.split(f".{identifier_token}.pdf")[0]
+    return timestamp
+
 
 def get_transpose_sequence(num_measures:int=NUM_MEASURES[0]):
     f""" Get a transpose sequence of length in the range {TRANSPOSE_RANGE} of the specified length
@@ -242,9 +264,20 @@ def get_transpose_sequence(num_measures:int=NUM_MEASURES[0]):
     return transpose_sequence
 
 
-class Symposium:
-    def __init__(self, seed:int=None):
+class Symposium(torch.utils.data.IterableDataset):
+    def __init__(self, output_directory:Path=Path(OUTPUT_DIRECTORY), seed:int=None, transforms=None):
+        self.output_directory = output_directory
+        if transforms is None:
+            transforms = []
+
+        transforms = [tvtransforms.ToTensor(), tvtransforms.Resize(parameters.IMAGE_SHAPE)] + transforms
+        self.transforms = tvtransforms.Compose(transforms)
+        self.token_map = self.get_token_mapping()
+
         random.seed(seed)
+
+    def __iter__(self):
+        return self
 
     def get_label_token(self, leaf):
         if type(leaf) == abjad.Note:
@@ -266,20 +299,41 @@ class Symposium:
             token = f"chord-{chord_token}_{duration}"
         elif type(leaf) == abjad.Rest:
             duration = DURATIONS[leaf.written_duration.denominator]
-            if leaf.written_duration.numerator != 1:
-                breakpoint()
+            assert leaf.written_duration.numerator == 1, "Not sure how to handle anything else, but shouldn't happen"
             token = f"rest-{duration}"
         else:
-            breakpoint()
+            raise Exception("Unknown abjad symbol type called")
         
         return token
 
-    def __iter__(self):
-        return self
+    def get_score_image(self, score):
+        """ Convert the score to an image label label
+        """
+        illustrator = Illustrator(score, output_directory=self.output_directory, should_open=False)
+        paths, format_time, render_time, success, log = illustrator()
+        if success is False:
+            raise Exception("Could not render score")
 
-    def __next__(self):
-        """ Generate a random score using Mozart's dice game 
-        For more details see https://abjad.github.io/examples/corpus-selection.html
+        document = fitz.open(paths[0])
+        pixel_map = document[0].get_pixmap(colorspace=fitz.csGRAY)
+        image = Image.frombytes("L", [pixel_map.width, pixel_map.height], pixel_map.samples)
+
+        image = self.transforms(image)
+        image = image.type(torch.FloatTensor).rename("channels", "height", "width")
+        image = torch.squeeze(image, "channels")
+
+        return image
+    
+    def get_label_indices(self, label):
+        label_indices = [self.token_map.index(token) for token in label]
+        length_pad = [len(self.token_map)] + [len(self.token_map) + 1 for index in range(MAX_LENGTH - len(label))]
+        label_indices += length_pad
+
+        label = torch.tensor(label_indices, dtype=torch.long)
+        return label
+    
+    def get_score(self):
+        """ Get an abjad score with a label in string format
         """
 
         config = {
@@ -335,8 +389,41 @@ class Symposium:
             time_accumulator += leaf.written_duration
             if time_accumulator % signature_duration == abjad.Duration(0):
                 label.append("barline")
-
+        
         return score, label
+
+    def __next__(self):
+        """ Generate a random score using Mozart's dice game 
+        For more details see https://abjad.github.io/examples/corpus-selection.html
+        """
+
+        score, label = self.get_score()
+        image = self.get_score_image(score)
+        label_indices = self.get_label_indices(label)
+
+        return image, label_indices
+    
+
+    def get_token_mapping(self):
+        """Load or create the token mapping if it does not already exist."""
+
+        if TOKEN_MAPPING_PATH.exists():
+            with open(str(TOKEN_MAPPING_PATH), "rb") as handle:
+                tokens = pickle.load(handle)
+        else:
+            tokens = []
+            max_label_length = -1
+            for _ in range(10000):
+                _, label = self.get_score()
+                max_label_length = max(len(label), max_label_length)
+                for token in label:
+                    if token not in tokens:
+                        tokens.append(token)
+
+            with open(str(TOKEN_MAPPING_PATH), "wb") as handle:
+                pickle.dump(tokens, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        return tokens
 
 
 if __name__ == "__main__":
@@ -344,4 +431,3 @@ if __name__ == "__main__":
 
     symposium = Symposium()
     score, label = next(symposium)
-    abjad.show(score)

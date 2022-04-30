@@ -15,3 +15,4 @@ matplotlib==3.5.1
 einops==0.4.1
 wandb==0.12.14
 abjad==3.4
+PyMuPDF==1.19.6
