@@ -144,7 +144,7 @@ class SwinSelfAttention(nn.Module):
         """
         return type(self)._position_bias_indices
 
-    def generate_mask(self, window_shape: int, patch_shape: int, num_heads: int, apply_shift: tuple = None):
+    def generate_mask(self, window_shape: int, patch_shape: int, apply_shift: tuple = None):
         """Create the unique self-attention mask, taking into consideration window shifting"""
 
         mask = torch.zeros(
@@ -187,14 +187,14 @@ class SwinSelfAttention(nn.Module):
         self,
         embedding_dim: int,
         window_shape: tuple,
-        patch_shape: tuple = parameters.WINDOW_PATCH_SHAPE,
-        num_heads: int = parameters.NUM_HEADS,
+        patch_shape: tuple,
+        num_heads: int,
         apply_shift: tuple = None,
     ):
         super().__init__()
 
         position_bias_dim = (2 * patch_shape[1] - 1, 2 * patch_shape[0] - 1)
-        mask = self.generate_mask(window_shape, patch_shape, num_heads, apply_shift=apply_shift)
+        mask = self.generate_mask(window_shape, patch_shape, apply_shift=apply_shift)
         self.attention = MultiHeadAttention(
             embedding_dim,
             num_heads,
@@ -217,10 +217,11 @@ class SwinTransformerBlock(nn.Module):
         self,
         embedding_dim: int,
         patch_dim: int,
-        apply_shift: bool = False,
-        feed_forward_expansion: int = parameters.FEED_FORWARD_EXPANSION,
-        image_shape: tuple = parameters.IMAGE_SHAPE,
-        patch_shape: tuple = parameters.WINDOW_PATCH_SHAPE,
+        apply_shift: bool,
+        feed_forward_expansion: int,
+        image_shape: tuple,
+        patch_shape: tuple,
+        num_heads: int
     ):
         super().__init__()
         for index, _ in enumerate(image_shape):
@@ -273,6 +274,7 @@ class SwinTransformerBlock(nn.Module):
             embedding_dim,
             window_shape=self.metadata["window_shape"],
             patch_shape=patch_shape,
+            num_heads=num_heads,
             apply_shift=apply_shift,
         )
         self.attention = nn.Sequential(attention)
@@ -306,14 +308,16 @@ class SwinTransformerStage(nn.Module):
 
     def __init__(
         self,
-        embedding_dim: int,
-        input_dim: int,
-        num_blocks: int = 2,
-        apply_merge: bool = True,
-        patch_dim: int = parameters.PATCH_DIM,
-        image_shape: tuple = parameters.IMAGE_SHAPE,
-        patch_shape: tuple = parameters.WINDOW_PATCH_SHAPE,
-        merge_reduce_factor: int = parameters.REDUCE_FACTOR,
+        embedding_dim:int,
+        input_dim:int,
+        num_blocks:int,
+        apply_merge:bool,
+        patch_dim:int,
+        feed_forward_expansion:int,
+        image_shape:tuple,
+        patch_shape:tuple,
+        num_heads:int,
+        merge_reduce_factor:int
     ):
         super().__init__()
 
@@ -341,8 +345,10 @@ class SwinTransformerStage(nn.Module):
                 embedding_dim=embedding_dim,
                 patch_dim=patch_dim,
                 apply_shift=is_odd,
+                feed_forward_expansion=feed_forward_expansion,
                 image_shape=image_shape,
                 patch_shape=patch_shape,
+                num_heads=num_heads
             )
 
         self.transform = nn.Sequential(transform_pipeline)
@@ -357,7 +363,7 @@ class SwinTransformerStage(nn.Module):
 class DecoderBlock(nn.Module):
     """Decode all of the tokens in the output sequence as well as the Swin self-attention output"""
 
-    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int = parameters.FEED_FORWARD_EXPANSION):
+    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int):
         super().__init__()
 
         self.output_length = output_length
@@ -430,8 +436,10 @@ class BrazenNet(nn.Module):
                 num_blocks=num_blocks,
                 apply_merge=apply_merge,
                 patch_dim=config.patch_dim * patch_reduction_multiples[index],
+                feed_forward_expansion=config.feed_forward_expansion,
                 image_shape=config.image_shape,
                 patch_shape=config.window_patch_shape,
+                num_heads=config.num_heads,
                 merge_reduce_factor=config.reduce_factor,
             )
 
@@ -454,7 +462,7 @@ class BrazenNet(nn.Module):
         )
         self.embed_encoder_output = nn.Sequential(encoder_embeddings)
 
-        self.output_length = config.output_sequence_dim + 1 # EOS symbol
+        self.output_length = config.total_length
 
         self.embed_label = nn.Embedding(
             config.total_symbols, config.decoder_embedding_dim, padding_idx=config.padding_symbol
@@ -462,7 +470,7 @@ class BrazenNet(nn.Module):
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
-            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim)
+            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim, config.feed_forward_expansion)
         self.decoder = nn.Sequential(decoder)
 
         # Map transformer outputs to sequence of symbols

@@ -226,59 +226,66 @@ DURATIONS = {1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 
 OUTPUT_DIRECTORY = "scores"
 DATASET_PROPERTIES_PATH = Path(f"symposium_properties.pickle")
 
-def generate_fragment():
-    """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
-    """
-
-    count_notes = random.randint(1, 8)
-    notes = []
-    for note_index in range(count_notes):
-        pitch = random.choice(PITCHES)
-        accidental = random.choice(ACCIDENTALS)
-        note = abjad.Note(f"{pitch}{accidental}")
-        notes.append(note)
-    
-    return notes
-        
-def extract_timestamp(file_name, identifier_token):
-    """ Extract a timestamp from an abjad-generated score filename """
-    timestamp = file_name.split(f".{identifier_token}.pdf")[0]
-    return timestamp
-
-
-def get_transpose_sequence(num_measures:int=NUM_MEASURES[0]):
-    f""" Get a transpose sequence of length in the range {TRANSPOSE_RANGE} of the specified length
-    """
-
-    transpose_sequence = []
-    current_transpose = 0
-    # Should be a relatively smooth random sequence but bounded
-    for i in range(num_measures):
-        current_transpose += random.randint(-2, 2)
-        current_transpose = min(TRANSPOSE_RANGE[1], current_transpose)
-        current_transpose = max(TRANSPOSE_RANGE[0], current_transpose)
-
-        transpose_sequence.append(current_transpose)
-
-    return transpose_sequence
-
 
 class Symposium(torch.utils.data.IterableDataset):
-    def __init__(self, output_directory:Path=Path(OUTPUT_DIRECTORY), seed:int=None, transforms=None):
+    def __init__(self, config:parameters.BrazenParameters, output_directory:Path=Path(OUTPUT_DIRECTORY), seed:int=None, transforms=None):
+        """ Note: mutates config
+        """
         self.output_directory = output_directory
         if transforms is None:
             transforms = []
 
-        transforms = [tvtransforms.ToTensor(), tvtransforms.Resize(parameters.IMAGE_SHAPE)] + transforms
+        transforms = [tvtransforms.ToTensor(), tvtransforms.Resize(config.image_shape)] + transforms
         self.transforms = tvtransforms.Compose(transforms)
         self.token_map, self.max_label_length = self.get_dataset_properties()
+        config.set_dataset_properties(len(self.token_map), self.max_label_length)
 
-        random.seed(seed)
+        self.random = random.Random(seed)
 
     def __iter__(self):
         """ Implement the dataset as an iterator - see __next__
         """
-        return self
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None: # single process
+            print("Single worker mode, using manually specified seed")
+            return self
+        else:
+            print(f"Setting worker {worker_info.id} to seed {worker_info.seed}")
+            self.random = random.Random(worker_info.seed)
+            return self
+
+    def generate_fragment(self):
+        """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
+        """
+        count_notes = self.random.randint(1, 8)
+        notes = []
+        for _ in range(count_notes):
+            pitch = self.random.choice(PITCHES)
+            accidental = self.random.choice(ACCIDENTALS)
+            note = abjad.Note(f"{pitch}{accidental}")
+            notes.append(note)
+        
+        return notes
+            
+    def extract_timestamp(self, file_name, identifier_token):
+        """ Extract a timestamp from an abjad-generated score filename """
+        timestamp = file_name.split(f".{identifier_token}.pdf")[0]
+        return timestamp
+
+    def get_transpose_sequence(self, num_measures:int=NUM_MEASURES[0]):
+        f""" Get a transpose sequence of length in the range {TRANSPOSE_RANGE} of the specified length
+        """
+        transpose_sequence = []
+        current_transpose = 0
+        # Should be a relatively smooth random sequence but bounded
+        for i in range(num_measures):
+            current_transpose += self.random.randint(-2, 2)
+            current_transpose = min(TRANSPOSE_RANGE[1], current_transpose)
+            current_transpose = max(TRANSPOSE_RANGE[0], current_transpose)
+
+            transpose_sequence.append(current_transpose)
+
+        return transpose_sequence
 
     def get_label_token(self, leaf):
         """ Process an abjad leaf (note or rest) to get the label token
@@ -353,20 +360,20 @@ class Symposium(torch.utils.data.IterableDataset):
         """
 
         config = {
-            "key_mode": "major", # random.choice(["major", "minor"]),
-            "key_pitch": random.choice(PITCHES),
-            "key_accidental": random.choice(ACCIDENTALS),
-            "time_signature": (random.choice(TIME_SIGNATURES["numerator"]), random.choice(TIME_SIGNATURES["denominator"])),
-            "transpose_sequence": random.choice(TRANSPOSE_RANGE),
-            "num_measures": random.randint(NUM_MEASURES[0], NUM_MEASURES[1]),
-            "clef": random.choice(CLEFS)
+            "key_mode": "major", # self.random.choice(["major", "minor"]),
+            "key_pitch": self.random.choice(PITCHES),
+            "key_accidental": self.random.choice(ACCIDENTALS),
+            "time_signature": (self.random.choice(TIME_SIGNATURES["numerator"]), self.random.choice(TIME_SIGNATURES["denominator"])),
+            "transpose_sequence": self.random.choice(TRANSPOSE_RANGE),
+            "num_measures": self.random.randint(NUM_MEASURES[0], NUM_MEASURES[1]),
+            "clef": self.random.choice(CLEFS)
         }
         
         measure_choices = {
             "treble": [measure[1] for measure_group in MEASURE_CHOICES for measure in measure_group],
             "bass": [measure[0] for measure_group in MEASURE_CHOICES for measure in measure_group]
         }
-        measures = [abjad.Container(random.choice(measure_choices[config["clef"]]), name=f"measure_{index}") for index in range(config["num_measures"])]
+        measures = [abjad.Container(self.random.choice(measure_choices[config["clef"]]), name=f"measure_{index}") for index in range(config["num_measures"])]
 
         # Transpose measures in-place
         transpose_sequence = get_transpose_sequence(config["num_measures"])

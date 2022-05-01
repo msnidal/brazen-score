@@ -13,12 +13,7 @@ REDUCE_FACTOR = 16  # reduce factor (increase in patch size) in patch merging la
 # Dataset
 LABEL_MODE = "semantic"
 NUM_SYMBOLS = 758 if LABEL_MODE == "agnostic" else 1781
-SEQUENCE_DIM = 75 if LABEL_MODE == "agnostic" else 58
-
-BEGINNING_OF_SEQUENCE = NUM_SYMBOLS
-END_OF_SEQUENCE = NUM_SYMBOLS + 1
-PADDING_SYMBOL = NUM_SYMBOLS + 2
-TOTAL_SYMBOLS = NUM_SYMBOLS + 3
+LABEL_LENGTH = 75 if LABEL_MODE == "agnostic" else 58
 
 RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
@@ -30,6 +25,8 @@ EPOCH_SIZE = 1
 LEARNING_RATE = 1e-3
 BETAS = (0.9, 0.98)
 EPS = 1e-9
+
+NUM_WORKERS = 4
 
 
 class BrazenParameters:
@@ -45,17 +42,37 @@ class BrazenParameters:
         encoder_block_stages=ENCODER_BLOCK_STAGES,
         num_decoder_blocks=NUM_DECODER_BLOCKS,
         reduce_factor=REDUCE_FACTOR,
-        output_sequence_dim=SEQUENCE_DIM,
+        label_length=LABEL_LENGTH,
         num_symbols=NUM_SYMBOLS,
-        beginning_of_sequence=BEGINNING_OF_SEQUENCE,
-        end_of_sequence=END_OF_SEQUENCE,
-        padding_symbol=PADDING_SYMBOL,
-        total_symbols=TOTAL_SYMBOLS,
         batch_size=BATCH_SIZE,
         eps=EPS,
         betas=BETAS,
-        learning_rate=LEARNING_RATE
+        learning_rate=LEARNING_RATE,
+        num_workers=NUM_WORKERS
     ):
         params = locals()
+        self.params = {}
         for param in params:
+            self.params[param] = params[param]
             setattr(self, param, params[param])
+
+        self.set_dataset_properties(num_symbols, label_length)
+        
+    def set_dataset_properties(self, num_symbols, label_length):
+        """ We have different number of symbols and label length based on the dataset properties
+        """
+        self.num_symbols = num_symbols
+        self.params["num_symbols"] = num_symbols
+
+        self.beginning_of_sequence = num_symbols
+        self.end_of_sequence = num_symbols + 1
+        self.padding_symbol = num_symbols + 2
+        self.total_symbols = num_symbols + 3
+
+        self.label_length = label_length
+        self.params["label_length"] = label_length
+
+        self.total_length = label_length + 1 # includes EOS symbol
+    
+    def __eq__(self, other):
+        return self.params == other.params

@@ -11,6 +11,7 @@ import wandb
 
 import dataset
 import neural_network
+import symposium
 import parameters
 
 
@@ -36,7 +37,7 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
             file.write(" ".join(label))
 
 
-def infer(model, inputs, token_map, labels=None):
+def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=None):
     """ """
     outputs, loss = model(
         inputs, labels=labels
@@ -47,11 +48,11 @@ def infer(model, inputs, token_map, labels=None):
     for batch in label_indices:
         batch_labels = []
         for index in batch:
-            if index == parameters.END_OF_SEQUENCE:
+            if index == config.end_of_sequence:
                 batch_labels.append("EOS")
-            elif index == parameters.BEGINNING_OF_SEQUENCE:
+            elif index == config.beginning_of_sequence:
                 batch_labels.append("BOS")
-            elif index == dataset.PADDING_SYMBOL:
+            elif index == config.padding_symbol:
                 batch_labels.append("")
             else:
                 batch_labels.append(token_map[index])
@@ -60,9 +61,9 @@ def infer(model, inputs, token_map, labels=None):
     return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
 
 
-def train(model, train_loader, train_length, device, token_map, use_wandb=True):
+def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=10000, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.Adam(model.parameters(), lr=parameters.LEARNING_RATE, betas=parameters.BETAS, eps=parameters.EPS)
+    optimizer = optim.Adam(model.parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
     model.train()
 
     if use_wandb:
@@ -72,8 +73,11 @@ def train(model, train_loader, train_length, device, token_map, use_wandb=True):
         wandb.watch(model)
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
+        if index > exit_after:
+            break
+
         inputs, labels = inputs.to(device), labels.to(device)
-        outputs = infer(model, inputs, token_map, labels=labels)
+        outputs = infer(model, inputs, token_map, config, labels=labels)
 
         prediction = outputs["raw"]
         loss = outputs["loss"]
@@ -87,7 +91,7 @@ def train(model, train_loader, train_length, device, token_map, use_wandb=True):
         optimizer.zero_grad()
 
 
-def test(model, test_loader, device, token_map):
+def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=10):
     """Test"""
     model.eval()  # eval mode
 
@@ -95,38 +99,48 @@ def test(model, test_loader, device, token_map):
     with torch.no_grad():
         for index, (images, labels) in enumerate(test_loader):
             # calculate outputs by running images through the network
-            if index == 1:
-                images, labels = images.to(device), labels.to(device)
-                outputs = infer(model, images, token_map)
-                predicted = outputs["indices"]
+            if index > exit_after:
+                break
 
-                # Comment out
-                write_disk(images.cpu(), outputs["labels"])
+            images, labels = images.to(device), labels.to(device)
+            outputs = infer(model, images, token_map, config)
+            predicted = outputs["indices"]
+
+            # Comment out
+            write_disk(images.cpu(), outputs["labels"])
 
 
 if __name__ == "__main__":
     # Create, split dataset into train & test
     torch.manual_seed(0)
+    config = neural_network.BrazenParameters()
 
-    primus_dataset = dataset.PrimusDataset(PRIMUS_PATH)
-    token_map = primus_dataset.tokens
-    train_size = int(0.8 * len(primus_dataset))
-    test_size = len(primus_dataset) - train_size
-    train_dataset, test_dataset = torchdata.random_split(primus_dataset, [train_size, test_size])
+    dataset_prompt = ""
+    while dataset_prompt not in [0, 1]:
+        dataset_prompt = input("Choose between [0: primus, 1: symposium]: ")
+    
+    if dataset_prompt == 0:
+        primus_dataset = dataset.PrimusDataset(PRIMUS_PATH)
+        #config.set_dataset_properties(len(primus_dataset.tokens), primus_dataset.max_label_length)
+        token_map = primus_dataset.tokens
 
-    train_length = len(train_dataset)
+        train_size = int(0.8 * len(primus_dataset))
+        test_size = len(primus_dataset) - train_size
+        train_dataset, test_dataset = torchdata.random_split(primus_dataset, [train_size, test_size])
 
-    train_loader = torchdata.DataLoader(train_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True, num_workers=1)
-    test_loader = torchdata.DataLoader(test_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True, num_workers=1)
+        train_loader = torchdata.DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
+        test_loader = torchdata.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
+    else:
+        symposium = symposium.Symposium()
+        #config.set_dataset_properties(len(symposium.token_map), symposium.max_label_length)
+        token_map = symposium.token_map
+
+        train_loader = torchdata.DataLoader(symposium, batch_size=config.batch_size, num_workers=config.num_workers)
+        test_loader = torchdata.DataLoader(symposium, batch_size=config.batch_size, num_workers=config.num_workers)
+
 
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")
-
-    print("Creating BrazenNet...")
-    config = neural_network.BrazenParameters()
-    model = neural_network.BrazenNet(config).to(device)
-    model.apply(neural_network.init_weights)
-    print("Done creating!")
 
     trained_models = list(MODEL_FOLDER.glob("**/*.pth"))
     did_load = False
@@ -142,17 +156,29 @@ if __name__ == "__main__":
                 prompt = int(input("Select the model index from above: "))
             selection = trained_models[prompt]
             print(f"Loading model {selection}...")
-            model.load_state_dict(torch.load(selection))
+            model = torch.load(selection)
+
+            assert model.config == config, "Loaded model config does not match"
             print("Done loading!")
             did_load = True
 
     if not did_load:
+        print("Creating BrazenNet...")
+        model = neural_network.BrazenNet(config).to(device)
+        model.apply(neural_network.init_weights)
+        print("Done creating!")
+
         print("Training model...")
-        train(model, train_loader, train_length, device, token_map, use_wandb=True)
+        use_wandb=None
+        while use_wandb not in [True, False]:
+            use_wandb = input("Use wandb? (T/F): ") == "T" if use_wandb in ["T", "F"] else None
+
+        train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
         print("Done training!")
+
         print("Saving model...")
         model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
         torch.save(model.state_dict(), model_path)
         print("Done saving model!")
 
-    test(model, test_loader, device, token_map)
+    test(model, test_loader, device, token_map, config)

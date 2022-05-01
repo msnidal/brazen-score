@@ -14,7 +14,6 @@ from PIL import Image
 
 import parameters
 
-TOKEN_PATH = pathlib.Path(f"tokens_{parameters.LABEL_MODE}.pickle")
 
 
 class PadToLargest:
@@ -31,18 +30,24 @@ class PadToLargest:
 
 
 class PrimusDataset(torchdata.Dataset):
-    def __init__(self, root_path: pathlib.Path, transforms=[]):
+    def __init__(self, config:parameters.BrazenParameters, root_path: pathlib.Path, transforms=[]):
+        """ Note: mutates config with the token and max label length so they can be used immediately
+        """
         if not root_path.exists():
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), root_path)
+
+        self.config = config
 
         self.root_path = root_path
         self.scores = [score.name for score in root_path.iterdir() if score.is_dir()]
         self.max_label_length = self.get_max_label_length()
-
         self.tokens = self.get_token_mapping()
+        config.set_dataset_properties(len(self.tokens), self.max_label_length)
 
-        transforms = [PadToLargest(parameters.RAW_IMAGE_SHAPE, 255), tvtransforms.Resize(parameters.IMAGE_SHAPE)] + transforms
+        transforms = [PadToLargest(config.raw_image_shape, 255), tvtransforms.Resize(config.image_shape)] + transforms
         self.transforms = tvtransforms.Compose(transforms)
+
+        self.token_path = pathlib.Path(f"tokens_{config.label_mode}.pickle")
 
     def __len__(self):
         return len(self.scores)
@@ -76,7 +81,7 @@ class PrimusDataset(torchdata.Dataset):
 
             if pad_length:
                 # special value of NUM_SYMBOLS is the empty padding value
-                length_pad = [parameters.END_OF_SEQUENCE] + [parameters.PADDING_SYMBOL for index in range(self.max_label_length - len(label))]
+                length_pad = [self.config.end_of_sequence] + [self.config.padding_symbol for index in range(self.max_label_length - len(label))]
                 label += length_pad
 
             label = torch.tensor(label, dtype=torch.long)
@@ -110,8 +115,8 @@ class PrimusDataset(torchdata.Dataset):
     def get_token_mapping(self):
         """Load or create the token mapping if it does not already exist."""
 
-        if TOKEN_PATH.exists():
-            with open(str(TOKEN_PATH), "rb") as handle:
+        if self.token_path.exists():
+            with open(str(self.token_path), "rb") as handle:
                 tokens = pickle.load(handle)
         else:
             tokens = []
@@ -121,7 +126,7 @@ class PrimusDataset(torchdata.Dataset):
                     if token not in tokens:
                         tokens.append(token)
 
-            with open(str(TOKEN_PATH), "wb") as handle:
+            with open(str(self.token_path), "wb") as handle:
                 pickle.dump(tokens, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         return tokens
