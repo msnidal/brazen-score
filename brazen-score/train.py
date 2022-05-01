@@ -116,8 +116,8 @@ if __name__ == "__main__":
 
     train_length = len(train_dataset)
 
-    train_loader = torchdata.DataLoader(train_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True)
-    test_loader = torchdata.DataLoader(test_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True)
+    train_loader = torchdata.DataLoader(train_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True, num_workers=1)
+    test_loader = torchdata.DataLoader(test_dataset, batch_size=parameters.BATCH_SIZE, shuffle=True, num_workers=1)
 
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")

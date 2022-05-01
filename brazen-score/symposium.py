@@ -224,8 +224,7 @@ TRANSPOSE_RANGE = [-5, 5]
 NUM_MEASURES = [4, 8]
 DURATIONS = {1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 32: "thirty_second"}
 OUTPUT_DIRECTORY = "scores"
-TOKEN_MAPPING_PATH = Path(f"symposium_tokens.pickle")
-MAX_LENGTH = 75
+DATASET_PROPERTIES_PATH = Path(f"symposium_properties.pickle")
 
 def generate_fragment():
     """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
@@ -272,14 +271,18 @@ class Symposium(torch.utils.data.IterableDataset):
 
         transforms = [tvtransforms.ToTensor(), tvtransforms.Resize(parameters.IMAGE_SHAPE)] + transforms
         self.transforms = tvtransforms.Compose(transforms)
-        self.token_map = self.get_token_mapping()
+        self.token_map, self.max_label_length = self.get_dataset_properties()
 
         random.seed(seed)
 
     def __iter__(self):
+        """ Implement the dataset as an iterator - see __next__
+        """
         return self
 
     def get_label_token(self, leaf):
+        """ Process an abjad leaf (note or rest) to get the label token
+        """
         if type(leaf) == abjad.Note:
             label = leaf.written_pitch.pitch_class.pitch_class_label
             octave = leaf.written_pitch.octave.number
@@ -307,16 +310,27 @@ class Symposium(torch.utils.data.IterableDataset):
         return token
 
     def get_score_image(self, score):
-        """ Convert the score to an image label label
+        """ Convert the score to a torch readable grayscale tensor format
         """
         illustrator = Illustrator(score, output_directory=self.output_directory, should_open=False)
         paths, format_time, render_time, success, log = illustrator()
+
+        score_paths = {"pdf": paths[0]}
+        for suffix in [".ly", ".log"]:
+            score_paths[suffix] = score_paths["pdf"].with_suffix(suffix)
+
         if success is False:
             raise Exception("Could not render score")
 
-        document = fitz.open(paths[0])
+        document = fitz.open(score_paths["pdf"])
         pixel_map = document[0].get_pixmap(colorspace=fitz.csGRAY)
         image = Image.frombytes("L", [pixel_map.width, pixel_map.height], pixel_map.samples)
+
+        # Delete temp files
+        document.close()
+        for path in score_paths.values():
+            if path.exists():
+                path.unlink()
 
         image = self.transforms(image)
         image = image.type(torch.FloatTensor).rename("channels", "height", "width")
@@ -325,8 +339,10 @@ class Symposium(torch.utils.data.IterableDataset):
         return image
     
     def get_label_indices(self, label):
+        """ Map the label to the indices in the token map
+        """
         label_indices = [self.token_map.index(token) for token in label]
-        length_pad = [len(self.token_map)] + [len(self.token_map) + 1 for index in range(MAX_LENGTH - len(label))]
+        length_pad = [len(self.token_map)] + [len(self.token_map) + 1 for _ in range(self.max_label_length - len(label))]
         label_indices += length_pad
 
         label = torch.tensor(label_indices, dtype=torch.long)
@@ -404,30 +420,29 @@ class Symposium(torch.utils.data.IterableDataset):
         return image, label_indices
     
 
-    def get_token_mapping(self):
-        """Load or create the token mapping if it does not already exist."""
+    def get_dataset_properties(self):
+        """Load or create the token mapping if it does not already exist.
+        Needs to be re-run if the symposium dataset properties are changed.
+        """
 
-        if TOKEN_MAPPING_PATH.exists():
-            with open(str(TOKEN_MAPPING_PATH), "rb") as handle:
-                tokens = pickle.load(handle)
+        if DATASET_PROPERTIES_PATH.exists():
+            with open(str(DATASET_PROPERTIES_PATH), "rb") as handle:
+                properties = pickle.load(handle)
         else:
-            tokens = []
-            max_label_length = -1
-            for _ in range(10000):
+            properties = {"tokens": [], "max_label_length": 0}
+            for _ in range(20000):
                 _, label = self.get_score()
-                max_label_length = max(len(label), max_label_length)
+                properties["max_label_length"] = max(len(label), properties["max_label_length"])
                 for token in label:
-                    if token not in tokens:
-                        tokens.append(token)
+                    if token not in properties["tokens"]:
+                        properties["tokens"].append(token)
 
-            with open(str(TOKEN_MAPPING_PATH), "wb") as handle:
-                pickle.dump(tokens, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with open(str(DATASET_PROPERTIES_PATH), "wb") as handle:
+                pickle.dump(properties, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        return tokens
+        return properties["tokens"], properties["max_label_length"]
 
 
 if __name__ == "__main__":
-    primus = dataset.PrimusDataset(train.PRIMUS_PATH)
-
     symposium = Symposium()
     score, label = next(symposium)
