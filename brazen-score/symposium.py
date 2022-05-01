@@ -4,7 +4,7 @@ from tokenize import String
 from pathlib import Path
 import hashlib
 import functools
-import pickle
+import pickle5 as pickle
 
 from PIL import Image
 import fitz
@@ -340,8 +340,7 @@ class Symposium(torch.utils.data.IterableDataset):
                 path.unlink()
 
         image = self.transforms(image)
-        image = image.type(torch.FloatTensor).rename("channels", "height", "width")
-        image = torch.squeeze(image, "channels")
+        image = torch.squeeze(image, 0)
 
         return image
     
@@ -447,7 +446,7 @@ class Symposium(torch.utils.data.IterableDataset):
             with open(str(DATASET_PROPERTIES_PATH), "wb") as handle:
                 pickle.dump(properties, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        return properties["tokens"], properties["max_label_length"]
+        return properties["tokens"], properties["max_label_length"] + 10
 
 
 if __name__ == "__main__":

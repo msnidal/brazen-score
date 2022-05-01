@@ -61,7 +61,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
 
 
-def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=10000, use_wandb:bool=True):
+def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=200000, use_wandb:bool=True):
     """Bingus"""
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
     model.train()
