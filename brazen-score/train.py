@@ -113,14 +113,14 @@ def test(model, test_loader, device, token_map, config:parameters.BrazenParamete
 if __name__ == "__main__":
     # Create, split dataset into train & test
     torch.manual_seed(0)
-    config = neural_network.BrazenParameters()
+    config = parameters.BrazenParameters()
 
     dataset_prompt = ""
-    while dataset_prompt not in [0, 1]:
+    while dataset_prompt not in ["0", "1"]:
         dataset_prompt = input("Choose between [0: primus, 1: symposium]: ")
     
-    if dataset_prompt == 0:
-        primus_dataset = dataset.PrimusDataset(PRIMUS_PATH)
+    if dataset_prompt == "0":
+        primus_dataset = dataset.PrimusDataset(config, PRIMUS_PATH)
         #config.set_dataset_properties(len(primus_dataset.tokens), primus_dataset.max_label_length)
         token_map = primus_dataset.tokens
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         train_loader = torchdata.DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
         test_loader = torchdata.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
     else:
-        symposium = symposium.Symposium()
+        symposium = symposium.Symposium(config)
         #config.set_dataset_properties(len(symposium.token_map), symposium.max_label_length)
         token_map = symposium.token_map
 
@@ -171,7 +171,8 @@ if __name__ == "__main__":
         print("Training model...")
         use_wandb=None
         while use_wandb not in [True, False]:
-            use_wandb = input("Use wandb? (T/F): ") == "T" if use_wandb in ["T", "F"] else None
+            wandb_prompt = input("Use wandb? (T/F): ")
+            use_wandb = wandb_prompt == "T" if wandb_prompt in ["T", "F"] else None
 
         train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
         print("Done training!")
