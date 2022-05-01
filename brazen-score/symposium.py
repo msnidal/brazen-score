@@ -376,7 +376,7 @@ class Symposium(torch.utils.data.IterableDataset):
         measures = [abjad.Container(self.random.choice(measure_choices[config["clef"]]), name=f"measure_{index}") for index in range(config["num_measures"])]
 
         # Transpose measures in-place
-        transpose_sequence = get_transpose_sequence(config["num_measures"])
+        transpose_sequence = self.get_transpose_sequence(config["num_measures"])
         for index, measure in enumerate(measures):
             abjad.mutate.transpose(measure, transpose_sequence[index])
 
@@ -451,5 +451,6 @@ class Symposium(torch.utils.data.IterableDataset):
 
 
 if __name__ == "__main__":
-    symposium = Symposium()
+    config = parameters.BrazenParameters()
+    symposium = Symposium(config)
     score, label = next(symposium)

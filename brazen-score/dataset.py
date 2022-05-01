@@ -30,11 +30,14 @@ class PadToLargest:
 
 
 class PrimusDataset(torchdata.Dataset):
-    def __init__(self, config:parameters.BrazenParameters, root_path: pathlib.Path, transforms=[]):
+    def __init__(self, config:parameters.BrazenParameters, root_path: pathlib.Path, transforms=None):
         """ Note: mutates config with the token and max label length so they can be used immediately
         """
         if not root_path.exists():
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), root_path)
+        
+        if transforms is None:
+            transforms = []
 
         self.config = config
 
