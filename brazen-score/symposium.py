@@ -332,6 +332,8 @@ class Symposium(torch.utils.data.IterableDataset):
         document = fitz.open(score_paths["pdf"])
         pixel_map = document[0].get_pixmap(colorspace=fitz.csGRAY)
         image = Image.frombytes("L", [pixel_map.width, pixel_map.height], pixel_map.samples)
+        crop_selector = (0, 0, image.size[0], image.size[0])
+        cropped_image = image.crop(crop_selector)
 
         # Delete temp files
         document.close()
@@ -339,10 +341,10 @@ class Symposium(torch.utils.data.IterableDataset):
             if path.exists():
                 path.unlink()
 
-        image = self.transforms(image)
-        image = torch.squeeze(image, 0)
+        transformed_image = self.transforms(cropped_image)
+        transformed_image = torch.squeeze(transformed_image, 0)
 
-        return image
+        return transformed_image
     
     def get_label_indices(self, label):
         """ Map the label to the indices in the token map
