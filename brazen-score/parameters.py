@@ -28,6 +28,8 @@ EPS = 1e-9
 
 NUM_WORKERS = 4
 
+DROPOUT_RATE = 0.1
+
 
 class BrazenParameters:
     def __init__(
@@ -48,7 +50,8 @@ class BrazenParameters:
         eps=EPS,
         betas=BETAS,
         learning_rate=LEARNING_RATE,
-        num_workers=NUM_WORKERS
+        num_workers=NUM_WORKERS,
+        dropout_rate=DROPOUT_RATE
     ):
         params = locals()
         self.params = {}

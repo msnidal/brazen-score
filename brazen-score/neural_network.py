@@ -40,6 +40,7 @@ class MultiHeadAttention(nn.Module):
         self,
         embedding_dim: int,
         num_heads: int,
+        dropout_rate: float,
         mask: torch.Tensor = None,
         position_bias_dim: int = None,
         position_bias_indices: tuple = None,
@@ -62,6 +63,7 @@ class MultiHeadAttention(nn.Module):
             num_heads=num_heads,
             head_embedding=self.head_dim,
         )
+        self.dropout = nn.Dropout(dropout_rate)
 
         # Learned embeddings for query, key and value
         for name in ["query", "key", "value"]:
@@ -114,6 +116,7 @@ class MultiHeadAttention(nn.Module):
             if self.mask is not None:
                 attention_logits = attention_logits.masked_fill(self.mask, float("-inf"))
             attention = self.softmax(attention_logits)
+            attention = self.dropout(attention)
 
             # Apply attention
             output = torch.matmul(attention, value_head)
@@ -121,6 +124,7 @@ class MultiHeadAttention(nn.Module):
 
         concatenated_heads = torch.cat(attention_heads, dim=-1)
         output_embedding = self.output_embedding(concatenated_heads)
+        output_embedding = self.dropout(output_embedding)
 
         return output_embedding
 
@@ -189,6 +193,7 @@ class SwinSelfAttention(nn.Module):
         window_shape: tuple,
         patch_shape: tuple,
         num_heads: int,
+        dropout_rate: float,
         apply_shift: tuple = None,
     ):
         super().__init__()
@@ -198,6 +203,7 @@ class SwinSelfAttention(nn.Module):
         self.attention = MultiHeadAttention(
             embedding_dim,
             num_heads,
+            dropout_rate,
             mask=mask,
             position_bias_dim=position_bias_dim,
             position_bias_indices=self.position_bias_indices,
@@ -221,7 +227,8 @@ class SwinTransformerBlock(nn.Module):
         feed_forward_expansion: int,
         image_shape: tuple,
         patch_shape: tuple,
-        num_heads: int
+        num_heads: int,
+        dropout_rate: float
     ):
         super().__init__()
         for index, _ in enumerate(image_shape):
@@ -284,6 +291,7 @@ class SwinTransformerBlock(nn.Module):
         feed_forward["linear_1"] = nn.Linear(embedding_dim, embedding_dim * feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
         feed_forward["linear_2"] = nn.Linear(embedding_dim * feed_forward_expansion, embedding_dim)
+        feed_forward["dropout"] = nn.Dropout(dropout_rate)
         self.feed_forward = nn.Sequential(feed_forward)
 
     def forward(self, embeddings: torch.Tensor):
@@ -317,7 +325,8 @@ class SwinTransformerStage(nn.Module):
         image_shape:tuple,
         patch_shape:tuple,
         num_heads:int,
-        merge_reduce_factor:int
+        merge_reduce_factor:int,
+        dropout_rate:float
     ):
         super().__init__()
 
@@ -348,7 +357,8 @@ class SwinTransformerStage(nn.Module):
                 feed_forward_expansion=feed_forward_expansion,
                 image_shape=image_shape,
                 patch_shape=patch_shape,
-                num_heads=num_heads
+                num_heads=num_heads,
+                dropout_rate=dropout_rate
             )
 
         self.transform = nn.Sequential(transform_pipeline)
@@ -363,16 +373,16 @@ class SwinTransformerStage(nn.Module):
 class DecoderBlock(nn.Module):
     """Decode all of the tokens in the output sequence as well as the Swin self-attention output"""
 
-    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int):
+    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int, dropout_rate:float):
         super().__init__()
 
         self.output_length = output_length
 
         attention_mask = torch.tensor(np.triu(np.full((output_length, output_length), True), 1).astype(np.bool))
-        self.output_attention = MultiHeadAttention(embedding_dim, 8, attention_mask, shape_prefix="batch")
+        self.output_attention = MultiHeadAttention(embedding_dim, 8, dropout_rate, attention_mask, shape_prefix="batch")
         self.output_attention_norm = nn.LayerNorm(embedding_dim)
 
-        self.attention_decoder = MultiHeadAttention(embedding_dim, 8, shape_prefix="batch")
+        self.attention_decoder = MultiHeadAttention(embedding_dim, 8, dropout_rate, shape_prefix="batch")
         self.attention_decoder_norm = nn.LayerNorm(embedding_dim)
 
         feed_forward = OrderedDict()
@@ -441,6 +451,7 @@ class BrazenNet(nn.Module):
                 patch_shape=config.window_patch_shape,
                 num_heads=config.num_heads,
                 merge_reduce_factor=config.reduce_factor,
+                dropout_rate=config.dropout_rate
             )
 
         self.encoder = nn.Sequential(encoder)
@@ -470,7 +481,7 @@ class BrazenNet(nn.Module):
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
-            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim, config.feed_forward_expansion)
+            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim, config.feed_forward_expansion, config.dropout_rate)
         self.decoder = nn.Sequential(decoder)
 
         # Map transformer outputs to sequence of symbols
