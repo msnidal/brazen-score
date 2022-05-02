@@ -282,6 +282,7 @@ class SwinTransformerBlock(nn.Module):
             window_shape=self.metadata["window_shape"],
             patch_shape=patch_shape,
             num_heads=num_heads,
+            dropout_rate=dropout_rate,
             apply_shift=apply_shift,
         )
         self.attention = nn.Sequential(attention)

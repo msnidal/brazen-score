@@ -2,7 +2,7 @@
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
-ENCODER_EMBEDDING_DIM = 128
+ENCODER_EMBEDDING_DIM = 96
 DECODER_EMBEDDING_DIM = 1024
 NUM_HEADS = 4
 FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
