@@ -453,3 +453,4 @@ if __name__ == "__main__":
     config = parameters.BrazenParameters()
     symposium = Symposium(config)
     score, label = next(symposium)
+    print(label)
