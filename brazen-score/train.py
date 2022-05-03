@@ -61,7 +61,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
 
 
-def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=1000000, use_wandb:bool=True):
+def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=20000, use_wandb:bool=True):
     """Bingus"""
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
     model.train()
@@ -75,6 +75,11 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
         if index > exit_after:
             break
+        
+        if index % 1000 == 0:
+            model_path = MODEL_FOLDER / "train.pth"
+            torch.save(model.state_dict(), model_path)
+
 
         inputs, labels = inputs.to(device), labels.to(device)
         outputs = infer(model, inputs, token_map, config, labels=labels)
@@ -86,7 +91,6 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             #wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
             wandb.log({"loss": loss, "epoch": index})
 
-        #if index % EPOCH_SIZE == 0 and index != 0:
         optimizer.step()
         optimizer.zero_grad()
 

@@ -390,6 +390,7 @@ class DecoderBlock(nn.Module):
         feed_forward["linear_0"] = nn.Linear(embedding_dim, embedding_dim * feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
         feed_forward["linear_1"] = nn.Linear(embedding_dim * feed_forward_expansion, embedding_dim)
+        feed_forward["dropout"] = nn.Dropout(dropout_rate)
         self.feed_forward = nn.Sequential(feed_forward)
 
         self.feed_forward_norm = nn.LayerNorm(embedding_dim)
@@ -488,7 +489,6 @@ class BrazenNet(nn.Module):
         # Map transformer outputs to sequence of symbols
         output = OrderedDict()
         output["linear_out"] = nn.Linear(config.decoder_embedding_dim, config.total_symbols)
-        #output["softmax"] = nn.LogSoftmax(dim=-1)
 
         self.output = nn.Sequential(output)
 
