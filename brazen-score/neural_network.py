@@ -513,7 +513,7 @@ class BrazenNet(nn.Module):
 
         if labels is None:  # the model is being used in inference mdoe
             labels = torch.tensor(
-                [self.config.beginning_of_sequence if index == 0 else self.padding_symbol for index in range(self.output_length)], device=images.device
+                [self.config.beginning_of_sequence if index == 0 else self.config.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
             batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
             embeddings["decoder"] = self.embed_label(batch_labels)

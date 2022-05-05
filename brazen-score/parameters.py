@@ -5,7 +5,7 @@ PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 96
 DECODER_EMBEDDING_DIM = 2048
 NUM_HEADS = 4
-FEED_FORWARD_EXPANSION = 3  # Expansion factor for self attention feed-forward
+FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
 NUM_DECODER_BLOCKS = 1  # Number of decoder blocks
 REDUCE_FACTOR = 16  # reduce factor (increase in patch size) in patch merging layer per stage
@@ -19,7 +19,7 @@ RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 
 # Training
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 EPOCH_SIZE = 1
 
 LEARNING_RATE = 1e-3
