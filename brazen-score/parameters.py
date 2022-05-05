@@ -30,6 +30,7 @@ WEIGHT_DECAY = 0.1
 NUM_WORKERS = 4
 
 DROPOUT_RATE = 0.1
+GRAD_NORM_CLIP = 1.0
 
 
 class BrazenParameters:
@@ -53,7 +54,8 @@ class BrazenParameters:
         learning_rate=LEARNING_RATE,
         num_workers=NUM_WORKERS,
         dropout_rate=DROPOUT_RATE,
-        weight_decay=WEIGHT_DECAY
+        weight_decay=WEIGHT_DECAY,
+        grad_norm_clip=GRAD_NORM_CLIP
     ):
         params = locals()
         self.params = {}

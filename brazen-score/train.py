@@ -87,6 +87,8 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         prediction = outputs["raw"]
         loss = outputs["loss"]
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+
         if use_wandb:
             #wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
             wandb.log({"loss": loss, "epoch": index})
