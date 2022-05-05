@@ -496,16 +496,16 @@ class BrazenNet(nn.Module):
         """ Sort parameters into whether or not their weights should be decayed
         """
 
-        parameter_decay = {True: [], False: []}
+        parameter_decay = {True: set(), False: set()}
 
         for module_name, module in self.named_modules():
             for parameter_name, parameter in module.named_parameters():
                 bucket = True if parameter_name.endswith("weight") and isinstance(module, nn.Linear) else False 
-                parameter_decay[bucket].append(parameter)
+                parameter_decay[bucket].add(parameter)
 
         model_parameters = [
-            {"params": parameter_decay[True], "weight_decay": self.config.weight_decay},
-            {"params": parameter_decay[False], "weight_decay": 0.0},
+            {"params": list(parameter_decay[True]), "weight_decay": self.config.weight_decay},
+            {"params": list(parameter_decay[False]), "weight_decay": 0.0},
         ]
 
         return model_parameters
