@@ -502,7 +502,8 @@ class BrazenNet(nn.Module):
             for parameter_name, parameter in module.named_parameters():
                 bucket = True if parameter_name.endswith("weight") and isinstance(module, nn.Linear) else False 
                 parameter_decay[bucket].add(parameter)
-
+        
+        parameter_decay[False] -= parameter_decay[True] 
         model_parameters = [
             {"params": list(parameter_decay[True]), "weight_decay": self.config.weight_decay},
             {"params": list(parameter_decay[False]), "weight_decay": 0.0},
