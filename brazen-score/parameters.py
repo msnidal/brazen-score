@@ -34,7 +34,7 @@ NUM_WORKERS = 4
 DROPOUT_RATE = 0.1
 GRAD_NORM_CLIP = 1.0
 
-GIT_COMMIT = subprocess.check_output(["git", "describe"]).strip()
+GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
 class BrazenParameters:
     def __init__(
