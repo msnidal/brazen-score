@@ -25,6 +25,7 @@ EPOCH_SIZE = 1
 LEARNING_RATE = 1e-3
 BETAS = (0.9, 0.98)
 EPS = 1e-9
+WEIGHT_DECAY = 0.1
 
 NUM_WORKERS = 4
 
@@ -51,7 +52,8 @@ class BrazenParameters:
         betas=BETAS,
         learning_rate=LEARNING_RATE,
         num_workers=NUM_WORKERS,
-        dropout_rate=DROPOUT_RATE
+        dropout_rate=DROPOUT_RATE,
+        weight_decay=WEIGHT_DECAY
     ):
         params = locals()
         self.params = {}

@@ -61,9 +61,9 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
 
 
-def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=20000, use_wandb:bool=True):
+def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=500000, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.Adam(model.parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
+    optimizer = optim.AdamW(model.get_parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
     model.train()
 
     if use_wandb:
@@ -73,7 +73,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         wandb.watch(model)
 
     for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
-        if index > exit_after:
+        if index * config.batch_size > exit_after:
             break
         
         if index % 1000 == 0:

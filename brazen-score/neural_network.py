@@ -492,6 +492,25 @@ class BrazenNet(nn.Module):
 
         self.output = nn.Sequential(output)
 
+    def get_parameters(self):
+        """ Sort parameters into whether or not their weights should be decayed
+        """
+
+        parameter_decay = {True: [], False: []}
+
+        for module_name, module in self.named_modules():
+            for parameter_name, parameter in module.named_parameters():
+                bucket = True if parameter_name.endswith("weight") and isinstance(module, nn.Linear) else False 
+                parameter_decay[bucket].append(parameter)
+
+        model_parameters = [
+            {"params": parameter_decay[True], "weight_decay": self.config.weight_decay},
+            {"params": parameter_decay[False], "weight_decay": 0.0},
+        ]
+
+        return model_parameters
+        
+        
     def forward(self, images: torch.Tensor, labels: torch.Tensor = None):
         encoder_patches = self.extract_encoder_patches(images)
         encoded_images = self.encoder(encoder_patches)
