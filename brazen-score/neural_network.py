@@ -374,7 +374,7 @@ class SwinTransformerStage(nn.Module):
 class DecoderBlock(nn.Module):
     """Decode all of the tokens in the output sequence as well as the Swin self-attention output"""
 
-    def __init__(self, output_length: int, embedding_dim: int, feed_forward_expansion: int, dropout_rate:float):
+    def __init__(self, output_length: int, embedding_dim: int, decoder_feed_forward_expansion: int, dropout_rate:float):
         super().__init__()
 
         self.output_length = output_length
@@ -387,9 +387,9 @@ class DecoderBlock(nn.Module):
         self.attention_decoder_norm = nn.LayerNorm(embedding_dim)
 
         feed_forward = OrderedDict()
-        feed_forward["linear_0"] = nn.Linear(embedding_dim, embedding_dim * feed_forward_expansion)
+        feed_forward["linear_0"] = nn.Linear(embedding_dim, embedding_dim * decoder_feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
-        feed_forward["linear_1"] = nn.Linear(embedding_dim * feed_forward_expansion, embedding_dim)
+        feed_forward["linear_1"] = nn.Linear(embedding_dim * decoder_feed_forward_expansion, embedding_dim)
         feed_forward["dropout"] = nn.Dropout(dropout_rate)
         self.feed_forward = nn.Sequential(feed_forward)
 
@@ -483,7 +483,7 @@ class BrazenNet(nn.Module):
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
-            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim, config.feed_forward_expansion, config.dropout_rate)
+            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim, config.decoder_feed_forward_expansion, config.dropout_rate)
         self.decoder = nn.Sequential(decoder)
 
         # Map transformer outputs to sequence of symbols

@@ -6,11 +6,12 @@ WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 96
 DECODER_EMBEDDING_DIM = 2048
-NUM_HEADS = 4
+NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
+DECODER_FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
 ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
 NUM_DECODER_BLOCKS = 1  # Number of decoder blocks
-REDUCE_FACTOR = 16  # reduce factor (increase in patch size) in patch merging layer per stage
+REDUCE_FACTOR = 8  # reduce factor (increase in patch size) in patch merging layer per stage
 
 # Dataset
 LABEL_MODE = "semantic"
@@ -18,13 +19,13 @@ NUM_SYMBOLS = 758 if LABEL_MODE == "agnostic" else 1781
 LABEL_LENGTH = 75 if LABEL_MODE == "agnostic" else 58
 
 RAW_IMAGE_SHAPE = (2048, 2048)
-IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
+IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 
 # Training
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 EPOCH_SIZE = 1
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 5e-4
 BETAS = (0.9, 0.98)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
@@ -49,6 +50,7 @@ class BrazenParameters:
         decoder_embedding_dim=DECODER_EMBEDDING_DIM,
         num_heads=NUM_HEADS,
         feed_forward_expansion=FEED_FORWARD_EXPANSION,
+        decoder_feed_forward_expansion=DECODER_FEED_FORWARD_EXPANSION,
         encoder_block_stages=ENCODER_BLOCK_STAGES,
         num_decoder_blocks=NUM_DECODER_BLOCKS,
         reduce_factor=REDUCE_FACTOR,

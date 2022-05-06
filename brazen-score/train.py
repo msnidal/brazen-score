@@ -64,7 +64,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.AdamW(model.get_parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
+    optimizer = optim.AdamW(model.get_parameters(), betas=config.betas, eps=config.eps)
     model.train()
 
     if use_wandb:
