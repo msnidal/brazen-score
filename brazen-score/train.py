@@ -99,7 +99,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             progress = (samples_processed - config.warmup_samples) / (config.exit_after - config.warmup_samples)
             learning_rate = config.learning_rate * max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
-        for parameter_group in optimizer.param_groups():
+        for parameter_group in optimizer.param_groups:
             parameter_group["lr"] = learning_rate
 
         if use_wandb:
