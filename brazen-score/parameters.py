@@ -24,7 +24,7 @@ IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 BATCH_SIZE = 8
 EPOCH_SIZE = 1
 
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-4
 BETAS = (0.9, 0.98)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
@@ -35,6 +35,9 @@ DROPOUT_RATE = 0.1
 GRAD_NORM_CLIP = 1.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
+
+WARMUP_SAMPLES = 500000
+EXIT_AFTER = 2000000
 
 class BrazenParameters:
     def __init__(
@@ -59,7 +62,9 @@ class BrazenParameters:
         dropout_rate=DROPOUT_RATE,
         weight_decay=WEIGHT_DECAY,
         grad_norm_clip=GRAD_NORM_CLIP,
-        git_commit=GIT_COMMIT
+        git_commit=GIT_COMMIT,
+        warmup_samples=WARMUP_SAMPLES,
+        exit_after=EXIT_AFTER
     ):
         params = locals()
         self.params = {}

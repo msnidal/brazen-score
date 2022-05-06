@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import os
 import time
 
@@ -61,7 +62,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
 
 
-def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=500000, use_wandb:bool=True):
+def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
     """Bingus"""
     optimizer = optim.AdamW(model.get_parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
     model.train()
@@ -72,29 +73,38 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         wandb.init(project="brazen-score", entity="msnidal", config=model_config)
         wandb.watch(model)
 
-    for index, (inputs, labels) in enumerate(train_loader):  # get index and batch
-        if index * config.batch_size > exit_after:
+    for batch_index, (inputs, labels) in enumerate(train_loader):  # get index and batch
+        samples_processed = batch_index * config.batch_size
+        if samples_processed > config.exit_after:
+            print(f"Done training after {samples_processed} samples!")
             break
         
-        if index % 1000 == 0:
+        if batch_index % 1000 == 0:
+            #print("Saving intermediate model")
             model_path = MODEL_FOLDER / "train.pth"
             torch.save(model.state_dict(), model_path)
 
-
         inputs, labels = inputs.to(device), labels.to(device)
         outputs = infer(model, inputs, token_map, config, labels=labels)
-
-        prediction = outputs["raw"]
         loss = outputs["loss"]
+
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+        optimizer.step()
+        model.zero_grad()
+
+        if samples_processed < config.warmup_samples:
+            learning_rate = config.learning_rate * (samples_processed / config.warmup_samples)
+        else:
+            progress = (samples_processed - config.warmup_samples) / (config.exit_after - config.warmup_samples)
+            learning_rate = config.learning_rate * max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+        for parameter_group in optimizer.param_groups():
+            parameter_group["lr"] = learning_rate
 
         if use_wandb:
-            #wandb.log({"loss": loss, "epoch": index // EPOCH_SIZE})
-            wandb.log({"loss": loss, "epoch": index})
+            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate})
 
-        optimizer.step()
-        optimizer.zero_grad()
 
 
 def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=10):
