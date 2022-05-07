@@ -9,8 +9,8 @@ DECODER_EMBEDDING_DIM = 2048
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
 DECODER_FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
-ENCODER_BLOCK_STAGES = (2, 2)  # Number of transformer blocks in each of the 4 stages
-NUM_DECODER_BLOCKS = 1  # Number of decoder blocks
+ENCODER_BLOCK_STAGES = (4, 4)  # Number of transformer blocks in each of the 4 stages
+NUM_DECODER_BLOCKS = 2  # Number of decoder blocks
 REDUCE_FACTOR = 8  # reduce factor (increase in patch size) in patch merging layer per stage
 
 # Dataset
@@ -25,7 +25,7 @@ IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 BATCH_SIZE = 16
 EPOCH_SIZE = 1
 
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 3e-4
 BETAS = (0.9, 0.98)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
@@ -37,8 +37,8 @@ GRAD_NORM_CLIP = 1.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
-WARMUP_SAMPLES = 500000
-EXIT_AFTER = 2000000
+WARMUP_SAMPLES = 100000
+EXIT_AFTER = 500000
 
 class BrazenParameters:
     def __init__(
