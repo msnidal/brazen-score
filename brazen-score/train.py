@@ -96,7 +96,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         if samples_processed < config.warmup_samples:
             learning_rate = config.learning_rate * (samples_processed / config.warmup_samples)
         else:
-            progress = (samples_processed - config.warmup_samples) / (config.exit_after - config.warmup_samples)
+            progress = (samples_processed - config.warmup_samples) / (config.exit_after)
             learning_rate = config.learning_rate * max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
         for parameter_group in optimizer.param_groups:
@@ -172,9 +172,10 @@ if __name__ == "__main__":
                 prompt = int(input("Select the model index from above: "))
             selection = trained_models[prompt]
             print(f"Loading model {selection}...")
-            model = torch.load(selection)
+            model_state = torch.load(selection)
+            model = neural_network.BrazenNet(config).to(device)
+            model.load_state_dict(model_state)
 
-            assert model.config == config, "Loaded model config does not match"
             print("Done loading!")
             did_load = True
 
