@@ -17,6 +17,11 @@ import dataset
 import train
 import parameters
 
+KEY = "key"
+QUERY = "query"
+VALUE = "value"
+ENCODER = "encoder"
+DECODER = "decoder"
 
 
 def init_weights(module):
@@ -34,51 +39,30 @@ def init_weights(module):
 
 
 class MultiHeadAttention(nn.Module):
-    """Generic multi-head attention module implemented throughout both visual and output sequence transformer"""
+    """ Generic multi-head attention module implemented throughout both visual and output sequence transformer """
 
     def __init__(
         self,
         embedding_dim: int,
-        num_heads: int,
-        dropout_rate: float,
+        config: parameters.BrazenParameters,
         mask: torch.Tensor = None,
         position_bias_dim: int = None,
         position_bias_indices: tuple = None,
-        shape_prefix="batch",
     ):
         super().__init__()
 
-        # self.reshape_input = reshape_input # TODO: pass in prefix string
-        assert embedding_dim % num_heads == 0, "Embedding dim must be divisible by number of heads"
-        self.num_heads = num_heads
-        self.head_dim = embedding_dim // num_heads
+        assert embedding_dim % config.num_heads == 0, "Embedding dim must be divisible by number of heads"
+        self.num_heads = config.num_heads
+        self.head_dim = embedding_dim // config.num_heads
 
-        self.split_heads = einops_torch.Rearrange(
-            f"{shape_prefix} sequence (num_heads head_embedding) -> {shape_prefix} num_heads sequence head_embedding",
-            num_heads=num_heads,
-            head_embedding=self.head_dim,
+        # Learned linear projections for query, key and value for each head
+        self.project_heads = nn.ModuleDict(
+            {mode: nn.ModuleList([nn.Linear(embedding_dim, self.head_dim) for _ in range(config.num_heads)]) for mode in [KEY, QUERY, VALUE]}
         )
-        self.join_heads = einops_torch.Rearrange(
-            f"{shape_prefix} num_heads sequence head_embedding -> {shape_prefix} sequence (num_heads head_embedding)",
-            num_heads=num_heads,
-            head_embedding=self.head_dim,
-        )
-        self.dropout = nn.Dropout(dropout_rate)
-
-        # Learned embeddings for query, key and value
-        for name in ["query", "key", "value"]:
-            modules = OrderedDict()
-            for index in range(num_heads):
-                modules[str(index)] = nn.Linear(embedding_dim, self.head_dim)
-
-            setattr(self, f"embed_{name}", nn.ModuleDict(modules))
-
-        # self.embed_query, self.embed_key, self.embed_value = nn.Linear(embedding_dim, embedding_dim), nn.Linear(embedding_dim, embedding_dim), nn.Linear(embedding_dim, embedding_dim)
-        self.output_embedding = nn.Linear(embedding_dim, embedding_dim)
 
         # Optional properties
-        # assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {num_heads})"
         if mask is not None:
+            assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {config.num_heads})"
             self.register_buffer("mask", mask, persistent=False)
         else:
             self.mask = None
@@ -93,40 +77,43 @@ class MultiHeadAttention(nn.Module):
             self.position_bias = None
 
         self.softmax = nn.Softmax(dim=-1)
+        self.attention_dropout = nn.Dropout(config.dropout_rate)
+
+        self.embed_output = nn.Linear(embedding_dim, embedding_dim)
+        self.output_dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
-        """Apply multi-head attention to query, key and value"""
+        """Apply multi-head attention to query, key and value
+        """
 
-        # Apply embeddings and split heads
-        attention_heads = []
-        for index in range(self.num_heads):
-            query_head = self.embed_query[str(index)](query)
-            key_head = self.embed_key[str(index)](key)
-            value_head = self.embed_value[str(index)](value)
+        representation_heads = []
+        input_modes = {"query": query, "key": key, "value": value}
 
-            attention_logits = torch.div(torch.matmul(query_head, key_head.transpose(-1, -2)), math.sqrt(self.head_dim))
+        for head_index in range(self.num_heads):
+            head_embeddings = {mode: self.project_heads[mode][head_index](input_modes[mode]) for mode in self.project_heads.keys()}
+
+            attention_scores = (head_embeddings[QUERY] @ head_embeddings[KEY].transpose(-1, -2)) / math.sqrt(self.head_dim)
 
             # Optional position bias for swin transforms
             if self.position_bias is not None:
-                attention_logits = (
-                    attention_logits + self.position_bias[self.position_bias_indices[0], self.position_bias_indices[1]]
+                attention_scores = (
+                    attention_scores + self.position_bias[self.position_bias_indices[0], self.position_bias_indices[1]]
                 )
-
-            # Mask relevant values, apply softmax
             if self.mask is not None:
-                attention_logits = attention_logits.masked_fill(self.mask, float("-inf"))
-            attention = self.softmax(attention_logits)
-            attention = self.dropout(attention)
+                attention_scores = attention_scores.masked_fill(self.mask, float("-inf"))
+
+            attention_weights = self.softmax(attention_scores)
+            attention_weights = self.attention_dropout(attention_weights)
 
             # Apply attention
-            output = torch.matmul(attention, value_head)
-            attention_heads.append(output)
+            representation = attention_weights @ head_embeddings[VALUE]
+            representation_heads.append(representation)
 
-        concatenated_heads = torch.cat(attention_heads, dim=-1)
-        output_embedding = self.output_embedding(concatenated_heads)
-        output_embedding = self.dropout(output_embedding)
+        representations = torch.cat(representation_heads, dim=-1)
+        embeddings = self.embed_output(representations)
+        embeddings = self.output_dropout(embeddings)
 
-        return output_embedding
+        return embeddings
 
 
 class SwinSelfAttention(nn.Module):
@@ -162,7 +149,7 @@ class SwinSelfAttention(nn.Module):
             ),
             names=("window_y", "window_x", "base_patch_y", "base_patch_x", "target_patch_y", "target_patch_x"),
             dtype=torch.bool,
-        )  # TODO: verify patch_shape[0] -> vertical, horizontal
+        )
 
         if apply_shift:
             shift_x, shift_y = (
@@ -191,27 +178,23 @@ class SwinSelfAttention(nn.Module):
         self,
         embedding_dim: int,
         window_shape: tuple,
-        patch_shape: tuple,
-        num_heads: int,
-        dropout_rate: float,
-        apply_shift: tuple = None,
+        apply_shift: tuple,
+        config: parameters.BrazenParameters
     ):
         super().__init__()
 
-        position_bias_dim = (2 * patch_shape[1] - 1, 2 * patch_shape[0] - 1)
-        mask = self.generate_mask(window_shape, patch_shape, apply_shift=apply_shift)
+        position_bias_dim = (2 * config.patch_shape[1] - 1, 2 * config.patch_shape[0] - 1)
+        mask = self.generate_mask(window_shape, config.patch_shape, apply_shift=apply_shift)
         self.attention = MultiHeadAttention(
             embedding_dim,
-            num_heads,
-            dropout_rate,
+            config,
             mask=mask,
             position_bias_dim=position_bias_dim,
             position_bias_indices=self.position_bias_indices,
-            shape_prefix="batch vertical_windows horizontal_windows",
         )
 
     def forward(self, patches: torch.Tensor):
-        output = self.attention(patches, patches, patches)
+        output = self.attention({"query": patches, "key": patches, "head": patches})
 
         return output
 
@@ -224,76 +207,68 @@ class SwinTransformerBlock(nn.Module):
         embedding_dim: int,
         patch_dim: int,
         apply_shift: bool,
-        feed_forward_expansion: int,
-        image_shape: tuple,
-        patch_shape: tuple,
-        num_heads: int,
-        dropout_rate: float
+        config: parameters.BrazenParameters
     ):
         super().__init__()
-        for index, _ in enumerate(image_shape):
+
+        for index, _ in enumerate(config.image_shape):
             assert (
-                patch_shape[0] % 2 == 0 and patch_shape[1] % 2 == 0
+                config.window_patch_shape[0] % 2 == 0 and config.window_patch_shape[1] % 2 == 0
             ), "Window shape must be even for even window splitting"
-            assert image_shape[index] % patch_dim == 0, "Image width must be divisible by patch dimension"
-            assert (image_shape[index] // patch_dim) % patch_shape[
+            assert config.image_shape[index] % patch_dim == 0, "Image width must be divisible by patch dimension"
+            assert (config.image_shape[index] // patch_dim) % config.window_patch_shape[
                 index
             ] == 0, "Number of patches must be divisible by window dimension"
 
         self.cyclic_shift = (
             (
-                -(patch_shape[1] // 2),
-                -(patch_shape[0] // 2),
-            )  # switch order to vertical, horizontal to match embedding
+                -(config.window_patch_shape[1] // 2),
+                -(config.window_patch_shape[0] // 2),
+            ) # use (vertical, horizontal) ordering to match embedding
             if apply_shift is True
             else None
         )
-        self.metadata = {  # debugging metadata
-            "embedding_dim": embedding_dim,
-            "patch_dim": patch_dim,
-            "patch_shape": patch_shape,
-            "window_shape": (
-                image_shape[0] // patch_dim // patch_shape[0],
-                image_shape[1] // patch_dim // patch_shape[1],
-            ),
-        }
 
+        window_shape = (
+            config.image_shape[0] // patch_dim // config.window_patch_shape[0],
+            config.image_shape[1] // patch_dim // config.window_patch_shape[1],
+        ) 
+        
         self.partition_windows = einops_torch.Rearrange(
             utils.assemble_einops_string(
                 input_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
                 output_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch",
             ),
-            vertical_patches=patch_shape[1],
-            horizontal_patches=patch_shape[0],
+            vertical_patches=config.window_patch_shape[1],
+            horizontal_patches=config.window_patch_shape[0],
         )  # fix the number of patches per window, let it find number of windows from image
-        self.join_windows = einops_torch.Rearrange(
-            utils.assemble_einops_string(
-                input_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch",
-                output_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
-            ),
-            vertical_windows=self.metadata["window_shape"][1],
-            vertical_patches=patch_shape[1],
-        )
 
         attention = OrderedDict()
         attention["layer_norm"] = nn.LayerNorm(embedding_dim)
         attention["transform"] = SwinSelfAttention(
             embedding_dim,
-            window_shape=self.metadata["window_shape"],
-            patch_shape=patch_shape,
-            num_heads=num_heads,
-            dropout_rate=dropout_rate,
-            apply_shift=apply_shift,
+            window_shape,
+            apply_shift,
+            config,
         )
         self.attention = nn.Sequential(attention)
 
         feed_forward = OrderedDict()
         feed_forward["layer_norm"] = nn.LayerNorm(embedding_dim)
-        feed_forward["linear_1"] = nn.Linear(embedding_dim, embedding_dim * feed_forward_expansion)
+        feed_forward["linear_1"] = nn.Linear(embedding_dim, embedding_dim * config.feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
-        feed_forward["linear_2"] = nn.Linear(embedding_dim * feed_forward_expansion, embedding_dim)
-        feed_forward["dropout"] = nn.Dropout(dropout_rate)
+        feed_forward["linear_2"] = nn.Linear(embedding_dim * config.feed_forward_expansion, embedding_dim)
+        feed_forward["dropout"] = nn.Dropout(config.dropout_rate)
         self.feed_forward = nn.Sequential(feed_forward)
+
+        self.join_windows = einops_torch.Rearrange(
+            utils.assemble_einops_string(
+                input_shape="batch vertical_windows horizontal_windows (vertical_patches horizontal_patches) patch",
+                output_shape="batch (vertical_patches vertical_windows) (horizontal_patches horizontal_windows) patch",
+            ),
+            vertical_windows=window_shape[1],
+            vertical_patches=config.window_patch_shape[1],
+        )
 
     def forward(self, embeddings: torch.Tensor):
         if self.cyclic_shift:
@@ -322,12 +297,7 @@ class SwinTransformerStage(nn.Module):
         num_blocks:int,
         apply_merge:bool,
         patch_dim:int,
-        feed_forward_expansion:int,
-        image_shape:tuple,
-        patch_shape:tuple,
-        num_heads:int,
-        merge_reduce_factor:int,
-        dropout_rate:float
+        config: parameters.BrazenParameters
     ):
         super().__init__()
 
@@ -339,8 +309,8 @@ class SwinTransformerStage(nn.Module):
                     input_shape="batch (vertical_patches vertical_reduce) (horizontal_patches horizontal_reduce) patch",
                     output_shape="batch vertical_patches horizontal_patches (vertical_reduce horizontal_reduce patch)",
                 ),
-                vertical_reduce=merge_reduce_factor,
-                horizontal_reduce=merge_reduce_factor,
+                vertical_reduce=config.reduce_factor,
+                horizontal_reduce=config.reduce_factor,
             )
 
         input_pipeline["embed"] = nn.Linear(input_dim, embedding_dim)
@@ -355,11 +325,7 @@ class SwinTransformerStage(nn.Module):
                 embedding_dim=embedding_dim,
                 patch_dim=patch_dim,
                 apply_shift=is_odd,
-                feed_forward_expansion=feed_forward_expansion,
-                image_shape=image_shape,
-                patch_shape=patch_shape,
-                num_heads=num_heads,
-                dropout_rate=dropout_rate
+                config=config
             )
 
         self.transform = nn.Sequential(transform_pipeline)
@@ -372,44 +338,44 @@ class SwinTransformerStage(nn.Module):
 
 
 class DecoderBlock(nn.Module):
-    """Decode all of the tokens in the output sequence as well as the Swin self-attention output"""
+    """ Decode all of the tokens in the output sequence as well as the Swin self-attention output
+    """
 
-    def __init__(self, output_length: int, embedding_dim: int, decoder_feed_forward_expansion: int, dropout_rate:float):
+    def __init__(self, config: parameters.BrazenParameters):
         super().__init__()
 
-        self.output_length = output_length
+        sequence_mask = torch.tensor(np.triu(np.full((config.sequence_length, config.sequence_length), True), 1).astype(np.bool))
 
-        attention_mask = torch.tensor(np.triu(np.full((output_length, output_length), True), 1).astype(np.bool))
-        self.output_attention = MultiHeadAttention(embedding_dim, 8, dropout_rate, attention_mask, shape_prefix="batch")
-        self.output_attention_norm = nn.LayerNorm(embedding_dim)
+        attend_sequence = OrderedDict()
+        attend_sequence["layer_norm"] = nn.LayerNorm(config.decoder_embedding_dim)
+        attend_sequence["attention"] = MultiHeadAttention(config.decoder_embedding_dim, config, mask=sequence_mask)
+        self.attend_sequence = nn.Sequential(attend_sequence)
 
-        self.attention_decoder = MultiHeadAttention(embedding_dim, 8, dropout_rate, shape_prefix="batch")
-        self.attention_decoder_norm = nn.LayerNorm(embedding_dim)
+        transform = OrderedDict()
+        transform["layer_norm"] = nn.LayerNorm(config.decoder_embedding_dim)
+        transform["attention"] = MultiHeadAttention(config.decoder_embedding_dim, config)
+        self.transform = nn.Sequential(transform)
 
         feed_forward = OrderedDict()
-        feed_forward["linear_0"] = nn.Linear(embedding_dim, embedding_dim * decoder_feed_forward_expansion)
+        feed_forward["layer_norm"] = nn.LayerNorm(config.decoder_embedding_dim)
+        feed_forward["linear_0"] = nn.Linear(config.decoder_embedding_dim, config.decoder_embedding_dim * config.decoder_feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
-        feed_forward["linear_1"] = nn.Linear(embedding_dim * decoder_feed_forward_expansion, embedding_dim)
-        feed_forward["dropout"] = nn.Dropout(dropout_rate)
+        feed_forward["linear_1"] = nn.Linear(config.decoder_embedding_dim * config.decoder_feed_forward_expansion, config.decoder_embedding_dim)
+        feed_forward["dropout"] = nn.Dropout(config.dropout_rate)
         self.feed_forward = nn.Sequential(feed_forward)
 
-        self.feed_forward_norm = nn.LayerNorm(embedding_dim)
-
     def forward(self, embeddings: dict):
-        output_attention = self.output_attention_norm(
-            embeddings["decoder"]
-            + self.output_attention(embeddings["decoder"], embeddings["decoder"], embeddings["decoder"])
-        )
-        attention_decoder_outputs = self.attention_decoder_norm(
-            output_attention + self.attention_decoder(embeddings["encoder"], embeddings["encoder"], output_attention)
-        )
-        feed_forward = self.feed_forward_norm(attention_decoder_outputs + self.feed_forward(attention_decoder_outputs))
+        assert ENCODER in embeddings and DECODER in embeddings, "Embeddings dictionary missing keys {ENCODER} and {DECODER}"
 
-        return {"decoder": feed_forward, "encoder": embeddings["encoder"]}
+        sequence_attention = embeddings[DECODER] + self.attend_sequence(embeddings[DECODER])
+        transform_attention = sequence_attention + self.attend_transform(sequence_attention)
+        feed_forward = transform_attention + self.feed_forward(transform_attention)
+
+        return {DECODER: feed_forward, ENCODER: embeddings[ENCODER]}
 
 
 class BrazenNet(nn.Module):
-    """A perception stack consisting of a SWIN transformer stage and a feed-forward layer
+    """A perception stack consisting of a shifted-window transformer stage and a feed-forward layer
     Predicts the entire output sequence in one go
     """
 
@@ -448,14 +414,8 @@ class BrazenNet(nn.Module):
                 num_blocks=num_blocks,
                 apply_merge=apply_merge,
                 patch_dim=config.patch_dim * patch_reduction_multiples[index],
-                feed_forward_expansion=config.feed_forward_expansion,
-                image_shape=config.image_shape,
-                patch_shape=config.window_patch_shape,
-                num_heads=config.num_heads,
-                merge_reduce_factor=config.reduce_factor,
-                dropout_rate=config.dropout_rate
+                config=config
             )
-
         self.encoder = nn.Sequential(encoder)
 
         # Rearrange window embeddings to a single embedding layer
@@ -469,17 +429,16 @@ class BrazenNet(nn.Module):
         encoder_out_patches = (
             config.window_patch_shape[0] * config.window_patch_shape[1]
         )  # assumes reductino to single window, is tested
-
         encoder_embeddings["reduce"] = nn.Linear(
             encoder_out_patches * encoder_out_patch_dim, config.decoder_embedding_dim
         )
         self.embed_encoder_output = nn.Sequential(encoder_embeddings)
 
-        self.output_length = config.total_length
-
-        self.embed_label = nn.Embedding(
+        self.output_length = config.sequence_length
+        self.embed_tokens = nn.Embedding(
             config.total_symbols, config.decoder_embedding_dim, padding_idx=config.padding_symbol
         )
+        self.embed_positions = nn.Embedding(config.sequence_length, config.decoder_embedding_dim)
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
@@ -489,7 +448,6 @@ class BrazenNet(nn.Module):
         # Map transformer outputs to sequence of symbols
         output = OrderedDict()
         output["linear_out"] = nn.Linear(config.decoder_embedding_dim, config.total_symbols)
-
         self.output = nn.Sequential(output)
 
     def get_parameters(self):
@@ -511,7 +469,6 @@ class BrazenNet(nn.Module):
 
         return model_parameters
         
-        
     def forward(self, images: torch.Tensor, labels: torch.Tensor = None):
         encoder_patches = self.extract_encoder_patches(images)
         encoded_images = self.encoder(encoder_patches)
@@ -524,7 +481,7 @@ class BrazenNet(nn.Module):
         encoder_embeddings = self.embed_encoder_output(encoded_images)
 
         embeddings = {
-            "encoder": einops.repeat(
+            ENCODER: einops.repeat(
                 encoder_embeddings,
                 "batch embedding -> batch sequence_length embedding",
                 sequence_length=self.output_length,
@@ -536,11 +493,11 @@ class BrazenNet(nn.Module):
                 [self.config.beginning_of_sequence if index == 0 else self.config.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
             batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
-            embeddings["decoder"] = self.embed_label(batch_labels)
+            embeddings[DECODER] = self.embed_tokens(batch_labels)
 
             for index in range(self.output_length):
                 decoder_outputs = self.decoder(embeddings)
-                output_sequence = self.output(decoder_outputs["decoder"])
+                output_sequence = self.output(decoder_outputs[DECODER])
                 labels[: index + 1] = torch.max(output_sequence, dim=-1)[1][0, : index + 1]
 
             loss = None
@@ -549,10 +506,10 @@ class BrazenNet(nn.Module):
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
             shifted_labels[:, 0] = self.config.beginning_of_sequence
 
-            embeddings["decoder"] = self.embed_label(shifted_labels)
+            embeddings[DECODER] = self.embed_tokens(shifted_labels) + self.embed_positions(torch.arange(self.config.sequence_length, dtype=torch.long))
 
             decoder_outputs = self.decoder(embeddings)
-            output_sequence = self.output(decoder_outputs["decoder"])
+            output_sequence = self.output(decoder_outputs[DECODER])
             loss = functional.cross_entropy(output_sequence.transpose(2, 1), labels, reduction="mean")
 
         return output_sequence, loss

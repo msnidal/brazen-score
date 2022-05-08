@@ -90,7 +90,7 @@ class BrazenParameters:
         self.label_length = label_length
         self.params["label_length"] = label_length
 
-        self.total_length = label_length + 1 # includes EOS symbol
+        self.sequence_length = label_length + 1 # includes EOS symbol
     
     def __eq__(self, other):
         return self.params == other.params
