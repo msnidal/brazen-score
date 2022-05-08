@@ -33,12 +33,14 @@ WEIGHT_DECAY = 0.1
 NUM_WORKERS = 4
 
 DROPOUT_RATE = 0.1
-GRAD_NORM_CLIP = 1.0
+GRAD_NORM_CLIP = 10.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
 WARMUP_SAMPLES = 100000
 EXIT_AFTER = 500000
+
+STANDARD_DEVIATION = 0.02
 
 class BrazenParameters:
     def __init__(
@@ -66,7 +68,8 @@ class BrazenParameters:
         grad_norm_clip=GRAD_NORM_CLIP,
         git_commit=GIT_COMMIT,
         warmup_samples=WARMUP_SAMPLES,
-        exit_after=EXIT_AFTER
+        exit_after=EXIT_AFTER,
+        standard_deviation=STANDARD_DEVIATION
     ):
         params = locals()
         self.params = {}

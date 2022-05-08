@@ -1,11 +1,12 @@
 from pathlib import Path
 import math
+import functools
 import os
 import time
 
 from matplotlib import pyplot as plt
 from torch.utils import data as torchdata
-from torch import cuda, optim
+from torch import cuda, optim, nn
 import torch
 import numpy as np
 import wandb
@@ -20,6 +21,20 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_PATH = "./brazen-net.pth"
 MODEL_FOLDER = Path("models")
+
+
+def init_weights(module, standard_deviation):
+    if isinstance(module, nn.Linear):
+        nn.init.trunc_normal_(module.weight, std=standard_deviation)
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)
+    elif isinstance(module, nn.LayerNorm):
+        nn.init.constant_(module.bias, 0)
+        nn.init.constant_(module.weight, 1.0)
+    elif isinstance(module, nn.Embedding):
+        nn.init.uniform_(module.weight, -1.0, 1.0)
+    elif isinstance(module, nn.parameter.Parameter):
+        nn.init.trunc_normal_(module, 0.0, std=standard_deviation)
 
 
 def count_trainable_params(model):
@@ -64,7 +79,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.AdamW(model.get_parameters(), betas=config.betas, eps=config.eps)
+    optimizer = optim.AdamW(model.get_parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
     model.train()
 
     if use_wandb:
@@ -85,14 +100,16 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             torch.save(model.state_dict(), model_path)
 
         inputs, labels = inputs.to(device), labels.to(device)
+        model.zero_grad()
+
         outputs = infer(model, inputs, token_map, config, labels=labels)
         loss = outputs["loss"]
 
         loss.backward()
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
         optimizer.step()
-        model.zero_grad()
 
+        """
         if samples_processed < config.warmup_samples:
             learning_rate = config.learning_rate * (samples_processed / config.warmup_samples)
         else:
@@ -100,10 +117,11 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             learning_rate = config.learning_rate * max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
         for parameter_group in optimizer.param_groups:
-            parameter_group["lr"] = learning_rate
+            parameter_group["lr"] = config.learning_rate
+        """
 
         if use_wandb:
-            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate})
+            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": config.learning_rate})
 
 
 
@@ -182,7 +200,9 @@ if __name__ == "__main__":
     if not did_load:
         print("Creating BrazenNet...")
         model = neural_network.BrazenNet(config).to(device)
-        model.apply(neural_network.init_weights)
+
+        configured_init_weights = functools.partial(init_weights, standard_deviation=config.standard_deviation)
+        model.apply(configured_init_weights)
         print("Done creating!")
 
         print("Training model...")

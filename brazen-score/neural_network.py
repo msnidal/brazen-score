@@ -24,20 +24,6 @@ ENCODER = "encoder"
 DECODER = "decoder"
 
 
-def init_weights(module):
-    if isinstance(module, nn.Linear):
-        nn.init.trunc_normal_(module.weight, std=0.02)
-        if module.bias is not None:
-            nn.init.constant_(module.bias, 0)
-    elif isinstance(module, nn.LayerNorm):
-        nn.init.constant_(module.bias, 0)
-        nn.init.constant_(module.weight, 1.0)
-    elif isinstance(module, nn.Embedding):
-        nn.init.uniform_(module.weight, -1.0, 1.0)
-    elif isinstance(module, nn.parameter.Parameter):
-        nn.init.trunc_normal_(module, 0.0, std=0.02)
-
-
 class MultiHeadAttention(nn.Module):
     """ Generic multi-head attention module implemented throughout both visual and output sequence transformer """
 
