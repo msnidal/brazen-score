@@ -239,6 +239,7 @@ class Symposium(torch.utils.data.IterableDataset):
         self.transforms = tvtransforms.Compose(transforms)
         self.token_map, self.max_label_length = self.get_dataset_properties()
         config.set_dataset_properties(len(self.token_map), self.max_label_length)
+        self.config = config
 
         self.random = random.Random(seed)
 
@@ -350,7 +351,7 @@ class Symposium(torch.utils.data.IterableDataset):
         """ Map the label to the indices in the token map
         """
         label_indices = [self.token_map.index(token) for token in label]
-        length_pad = [len(self.token_map)] + [len(self.token_map) + 1 for _ in range(self.max_label_length - len(label))]
+        length_pad = [self.config.end_of_sequence] + [self.config.padding_symbol for _ in range(self.max_label_length - len(label))]
         label_indices += length_pad
 
         label = torch.tensor(label_indices, dtype=torch.long)
