@@ -22,7 +22,7 @@ RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 
 # Training
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 EPOCH_SIZE = 1
 
 LEARNING_RATE = 3e-4
