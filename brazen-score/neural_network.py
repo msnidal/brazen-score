@@ -62,7 +62,7 @@ class MultiHeadAttention(nn.Module):
 
         # Optional properties
         if mask is not None:
-            assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {config.num_heads})"
+            #assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {config.num_heads})"
             self.register_buffer("mask", mask, persistent=False)
         else:
             self.mask = None
@@ -183,8 +183,8 @@ class SwinSelfAttention(nn.Module):
     ):
         super().__init__()
 
-        position_bias_dim = (2 * config.patch_shape[1] - 1, 2 * config.patch_shape[0] - 1)
-        mask = self.generate_mask(window_shape, config.patch_shape, apply_shift=apply_shift)
+        position_bias_dim = (2 * config.window_patch_shape[1] - 1, 2 * config.window_patch_shape[0] - 1)
+        mask = self.generate_mask(window_shape, config.window_patch_shape, apply_shift=apply_shift)
         self.attention = MultiHeadAttention(
             embedding_dim,
             config,
@@ -442,7 +442,7 @@ class BrazenNet(nn.Module):
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
-            decoder["block_{}".format(index)] = DecoderBlock(self.output_length, config.decoder_embedding_dim, config.decoder_feed_forward_expansion, config.dropout_rate)
+            decoder["block_{}".format(index)] = DecoderBlock(config)
         self.decoder = nn.Sequential(decoder)
 
         # Map transformer outputs to sequence of symbols
@@ -487,13 +487,14 @@ class BrazenNet(nn.Module):
                 sequence_length=self.output_length,
             )
         }
+        positions = torch.arange(self.config.sequence_length, device=encoder_embeddings.device, dtype=torch.long)
 
         if labels is None:  # the model is being used in inference mdoe
             labels = torch.tensor(
                 [self.config.beginning_of_sequence if index == 0 else self.config.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
             batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
-            embeddings[DECODER] = self.embed_tokens(batch_labels)
+            embeddings[DECODER] = self.embed_tokens(batch_labels) + self.embed_positions(positions)
 
             for index in range(self.output_length):
                 decoder_outputs = self.decoder(embeddings)
@@ -506,7 +507,7 @@ class BrazenNet(nn.Module):
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
             shifted_labels[:, 0] = self.config.beginning_of_sequence
 
-            embeddings[DECODER] = self.embed_tokens(shifted_labels) + self.embed_positions(torch.arange(self.config.sequence_length, dtype=torch.long))
+            embeddings[DECODER] = self.embed_tokens(shifted_labels) + self.embed_positions(positions)
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs[DECODER])
