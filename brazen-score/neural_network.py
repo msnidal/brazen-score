@@ -194,7 +194,7 @@ class SwinSelfAttention(nn.Module):
         )
 
     def forward(self, patches: torch.Tensor):
-        output = self.attention({"query": patches, "key": patches, "head": patches})
+        output = self.attention(patches, patches, patches)
 
         return output
 
