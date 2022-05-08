@@ -368,7 +368,7 @@ class DecoderBlock(nn.Module):
 
         normalized_transform_embeddings = self.transform_norm(sequence_attention) # I'm not normalizing the encoder embedidngs since they're "singleton". Skip post-normalize
         transform_embeddings = {QUERY: normalized_transform_embeddings, KEY: embeddings[ENCODER], VALUE: embeddings[ENCODER]}
-        transform_attention = normalized_transform_embeddings + self.attend_transform(transform_embeddings)
+        transform_attention = normalized_transform_embeddings + self.transform(transform_embeddings)
 
         normalized_feed_forward_embeddings = self.feed_forward_norm(transform_attention)
         feed_forward = normalized_feed_forward_embeddings + self.feed_forward(normalized_feed_forward_embeddings)
