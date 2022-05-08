@@ -82,15 +82,16 @@ class MultiHeadAttention(nn.Module):
         self.embed_output = nn.Linear(embedding_dim, embedding_dim)
         self.output_dropout = nn.Dropout(config.dropout_rate)
 
-    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
+    def forward(self, embeddings: dict): # query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
         """Apply multi-head attention to query, key and value
+        Embeddings should have three keys: "query", "key" and "value"
         """
 
+        assert QUERY in embeddings and KEY in embeddings and VALUE in embeddings, "The multihead attention module takes a dictionary input"
         representation_heads = []
-        input_modes = {"query": query, "key": key, "value": value}
 
         for head_index in range(self.num_heads):
-            head_embeddings = {mode: self.project_heads[mode][head_index](input_modes[mode]) for mode in self.project_heads.keys()}
+            head_embeddings = {mode: self.project_heads[mode][head_index](embeddings[mode]) for mode in self.project_heads.keys()}
 
             attention_scores = (head_embeddings[QUERY] @ head_embeddings[KEY].transpose(-1, -2)) / math.sqrt(self.head_dim)
 
@@ -194,7 +195,8 @@ class SwinSelfAttention(nn.Module):
         )
 
     def forward(self, patches: torch.Tensor):
-        output = self.attention(patches, patches, patches)
+        query_key_value = {QUERY: patches, KEY: patches, VALUE: patches}
+        output = self.attention(query_key_value)
 
         return output
 
@@ -244,17 +246,11 @@ class SwinTransformerBlock(nn.Module):
         )  # fix the number of patches per window, let it find number of windows from image
 
         attention = OrderedDict()
-        attention["layer_norm"] = nn.LayerNorm(embedding_dim)
-        attention["transform"] = SwinSelfAttention(
-            embedding_dim,
-            window_shape,
-            apply_shift,
-            config,
-        )
-        self.attention = nn.Sequential(attention)
+        self.self_attention_norm = nn.LayerNorm(embedding_dim)
+        self.self_attention = SwinSelfAttention(embedding_dim, window_shape, apply_shift, config)
 
+        self.feed_forward_norm = nn.LayerNorm(embedding_dim)
         feed_forward = OrderedDict()
-        feed_forward["layer_norm"] = nn.LayerNorm(embedding_dim)
         feed_forward["linear_1"] = nn.Linear(embedding_dim, embedding_dim * config.feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
         feed_forward["linear_2"] = nn.Linear(embedding_dim * config.feed_forward_expansion, embedding_dim)
@@ -275,10 +271,13 @@ class SwinTransformerBlock(nn.Module):
             embeddings = embeddings.roll(self.cyclic_shift, dims=(1, 2))  # base[:][0][0]  == shifted[:][4][4]
 
         patches = self.partition_windows(embeddings)
-        attention = patches + self.attention(patches)
-        output = attention + self.feed_forward(attention)
-        output_patches = self.join_windows(output)
+        normalized_patches = self.self_attention_norm(patches)
+        self_attention = normalized_patches + self.self_attention(normalized_patches)
 
+        normalized_feed_forward = self.feed_forward_norm(self_attention)
+        output = normalized_feed_forward + self.feed_forward(normalized_feed_forward)
+
+        output_patches = self.join_windows(output)
         if self.cyclic_shift:
             output_patches = output_patches.roll((-self.cyclic_shift[0], -self.cyclic_shift[1]), dims=(1, 2))  # unroll
 
@@ -346,18 +345,14 @@ class DecoderBlock(nn.Module):
 
         sequence_mask = torch.tensor(np.triu(np.full((config.sequence_length, config.sequence_length), True), 1).astype(np.bool))
 
-        attend_sequence = OrderedDict()
-        attend_sequence["layer_norm"] = nn.LayerNorm(config.decoder_embedding_dim)
-        attend_sequence["attention"] = MultiHeadAttention(config.decoder_embedding_dim, config, mask=sequence_mask)
-        self.attend_sequence = nn.Sequential(attend_sequence)
+        self.sequence_norm = nn.LayerNorm(config.decoder_embedding_dim)
+        self.attend_sequence = MultiHeadAttention(config.decoder_embedding_dim, config, mask=sequence_mask)
 
-        transform = OrderedDict()
-        transform["layer_norm"] = nn.LayerNorm(config.decoder_embedding_dim)
-        transform["attention"] = MultiHeadAttention(config.decoder_embedding_dim, config)
-        self.transform = nn.Sequential(transform)
+        self.transform_norm = nn.LayerNorm(config.decoder_embedding_dim)
+        self.transform = MultiHeadAttention(config.decoder_embedding_dim, config)
 
+        self.feed_forward_norm = nn.LayerNorm(config.decoder_embedding_dim)
         feed_forward = OrderedDict()
-        feed_forward["layer_norm"] = nn.LayerNorm(config.decoder_embedding_dim)
         feed_forward["linear_0"] = nn.Linear(config.decoder_embedding_dim, config.decoder_embedding_dim * config.decoder_feed_forward_expansion)
         feed_forward["gelu"] = nn.GELU()
         feed_forward["linear_1"] = nn.Linear(config.decoder_embedding_dim * config.decoder_feed_forward_expansion, config.decoder_embedding_dim)
@@ -367,9 +362,16 @@ class DecoderBlock(nn.Module):
     def forward(self, embeddings: dict):
         assert ENCODER in embeddings and DECODER in embeddings, "Embeddings dictionary missing keys {ENCODER} and {DECODER}"
 
-        sequence_attention = embeddings[DECODER] + self.attend_sequence(embeddings[DECODER])
-        transform_attention = sequence_attention + self.attend_transform(sequence_attention)
-        feed_forward = transform_attention + self.feed_forward(transform_attention)
+        normalized_sequence_embeddings = self.sequence_norm(embeddings[DECODER])
+        sequence_embeddings = {QUERY: normalized_sequence_embeddings, KEY: normalized_sequence_embeddings, VALUE: normalized_sequence_embeddings}
+        sequence_attention = normalized_sequence_embeddings + self.attend_sequence(sequence_embeddings)
+
+        normalized_transform_embeddings = self.transform_norm(sequence_attention) # I'm not normalizing the encoder embedidngs since they're "singleton". Skip post-normalize
+        transform_embeddings = {QUERY: normalized_transform_embeddings, KEY: embeddings[ENCODER], VALUE: embeddings[ENCODER]}
+        transform_attention = normalized_transform_embeddings + self.attend_transform(transform_embeddings)
+
+        normalized_feed_forward_embeddings = self.feed_forward_norm(transform_attention)
+        feed_forward = normalized_feed_forward_embeddings + self.feed_forward(normalized_feed_forward_embeddings)
 
         return {DECODER: feed_forward, ENCODER: embeddings[ENCODER]}
 
