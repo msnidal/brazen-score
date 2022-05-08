@@ -481,7 +481,7 @@ class BrazenNet(nn.Module):
         encoder_embeddings = self.embed_encoder_output(encoded_images)
 
         embeddings = {
-            ENCODER: encoder_embeddings.expand(self.output_length, self.config.decoder_embedding_dim)
+            ENCODER: einops.rearrange(encoder_embeddings, "batch encoder_embedding -> batch 1 encoder_embedding").expand(self.config.batch_size, self.config.sequence_length, self.config.decoder_embedding_dim)
         }
         positions = torch.arange(self.config.sequence_length, device=encoder_embeddings.device, dtype=torch.long)
 
