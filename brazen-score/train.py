@@ -79,7 +79,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.AdamW(model.get_parameters(), lr=config.learning_rate, betas=config.betas, eps=config.eps)
+    optimizer = optim.AdamW(model.get_parameters(), betas=config.betas, eps=config.eps)
     model.train()
 
     if use_wandb:
@@ -109,16 +109,21 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
         optimizer.step()
 
-        """
+        # warmup
+        wind_down_samples = config.exit_after - config.warmup_samples
+        ramp_scaler = (0.5 * math.pi) / config.warmup_samples
+
         if samples_processed < config.warmup_samples:
-            learning_rate = config.learning_rate * (samples_processed / config.warmup_samples)
+            learning_rate = math.sin(samples_processed * ramp_scaler) * config.learning_rate
+        elif samples_processed >= config.warmup_samples and samples_processed < wind_down_samples:
+            learning_rate = config.learning_rate
+        elif samples_processed >= wind_down_samples:
+            learning_rate = math.cos((samples_processed - wind_down_samples) * ramp_scaler) * config.learning_rate
         else:
-            progress = (samples_processed - config.warmup_samples) / (config.exit_after)
-            learning_rate = config.learning_rate * max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
+            raise Exception("Unable to determine sample processed learning rate")
 
         for parameter_group in optimizer.param_groups:
-            parameter_group["lr"] = config.learning_rate
-        """
+            parameter_group["lr"] = learning_rate
 
         if use_wandb:
             wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": config.learning_rate})
