@@ -25,7 +25,7 @@ IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 BATCH_SIZE = 16
 EPOCH_SIZE = 1
 
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 2e-4
 BETAS = (0.9, 0.98)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
