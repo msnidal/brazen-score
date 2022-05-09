@@ -126,7 +126,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             parameter_group["lr"] = learning_rate
 
         if use_wandb:
-            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": config.learning_rate})
+            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate})
 
 
 
