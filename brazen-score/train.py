@@ -108,7 +108,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         loss = outputs["loss"]
 
         loss.backward()
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
         optimizer.step()
 
         # warmup

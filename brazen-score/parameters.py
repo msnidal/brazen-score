@@ -33,7 +33,7 @@ WEIGHT_DECAY = 0.1
 NUM_WORKERS = 8
 
 DROPOUT_RATE = 0.05
-GRAD_NORM_CLIP = 10.0
+GRAD_NORM_CLIP = 1.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
