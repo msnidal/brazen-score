@@ -258,10 +258,10 @@ class SwinTransformerBlock(nn.Module):
 
         patches = self.partition_windows(embeddings)
         normalized_patches = self.self_attention_norm(patches)
-        self_attention = normalized_patches + self.self_attention(normalized_patches)
+        self_attention = patches + self.self_attention(normalized_patches)
 
         normalized_feed_forward = self.feed_forward_norm(self_attention)
-        output = normalized_feed_forward + self.feed_forward(normalized_feed_forward)
+        output = self_attention + self.feed_forward(normalized_feed_forward)
 
         output_patches = self.join_windows(output)
         if self.cyclic_shift:
@@ -350,14 +350,14 @@ class DecoderBlock(nn.Module):
 
         normalized_sequence_embeddings = self.sequence_norm(embeddings[DECODER])
         sequence_embeddings = {QUERY: normalized_sequence_embeddings, KEY: normalized_sequence_embeddings, VALUE: normalized_sequence_embeddings}
-        sequence_attention = normalized_sequence_embeddings + self.attend_sequence(sequence_embeddings)
+        sequence_attention = embeddings[DECODER] + self.attend_sequence(sequence_embeddings)
 
         normalized_transform_embeddings = self.transform_norm(sequence_attention) # I'm not normalizing the encoder embedidngs since they're "singleton". Skip post-normalize
         transform_embeddings = {QUERY: normalized_transform_embeddings, KEY: embeddings[ENCODER], VALUE: embeddings[ENCODER]}
-        transform_attention = normalized_transform_embeddings + self.transform(transform_embeddings)
+        transform_attention = sequence_attention + self.transform(transform_embeddings)
 
         normalized_feed_forward_embeddings = self.feed_forward_norm(transform_attention)
-        feed_forward = normalized_feed_forward_embeddings + self.feed_forward(normalized_feed_forward_embeddings)
+        feed_forward = transform_attention + self.feed_forward(normalized_feed_forward_embeddings)
 
         return {DECODER: feed_forward, ENCODER: embeddings[ENCODER]}
 
@@ -424,9 +424,9 @@ class BrazenNet(nn.Module):
 
         self.output_length = config.sequence_length
         self.embed_tokens = nn.Embedding(
-            config.total_symbols, config.decoder_embedding_dim, padding_idx=config.padding_symbol
+            config.total_symbols, config.decoder_embedding_dim
         )
-        self.embed_positions = nn.Embedding(config.sequence_length, config.decoder_embedding_dim)
+        #self.embed_positions = nn.Embedding(config.sequence_length, config.decoder_embedding_dim)
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
@@ -471,14 +471,14 @@ class BrazenNet(nn.Module):
         embeddings = {
             ENCODER: einops.rearrange(encoder_embeddings, "batch encoder_embedding -> batch 1 encoder_embedding").expand(self.config.batch_size, self.config.sequence_length, self.config.decoder_embedding_dim)
         }
-        positions = torch.arange(self.config.sequence_length, device=encoder_embeddings.device, dtype=torch.long)
+        #positions = torch.arange(self.config.sequence_length, device=encoder_embeddings.device, dtype=torch.long)
 
         if labels is None:  # the model is being used in inference mdoe
             labels = torch.tensor(
                 [self.config.beginning_of_sequence if index == 0 else self.config.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
             batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
-            embeddings[DECODER] = self.embed_tokens(batch_labels) + self.embed_positions(positions)
+            embeddings[DECODER] = self.embed_tokens(batch_labels) #+ self.embed_positions(positions)
 
             for index in range(self.output_length):
                 decoder_outputs = self.decoder(embeddings)
@@ -491,7 +491,7 @@ class BrazenNet(nn.Module):
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
             shifted_labels[:, 0] = self.config.beginning_of_sequence
 
-            embeddings[DECODER] = self.embed_tokens(shifted_labels) + self.embed_positions(positions)
+            embeddings[DECODER] = self.embed_tokens(shifted_labels) #+ self.embed_positions(positions)
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs[DECODER])

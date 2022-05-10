@@ -235,8 +235,15 @@ class Symposium(torch.utils.data.IterableDataset):
         if transforms is None:
             transforms = []
 
-        transforms = [tvtransforms.ToTensor(), tvtransforms.Resize(config.image_shape)] + transforms
-        self.transforms = tvtransforms.Compose(transforms)
+        compose_transforms = [
+            tvtransforms.ToTensor(), 
+            tvtransforms.Resize(config.image_shape), 
+            tvtransforms.Normalize(
+                (config.image_mean), 
+                (config.image_standard_deviation)
+            )
+        ] + transforms
+        self.transforms = tvtransforms.Compose(compose_transforms)
         self.token_map, self.max_label_length = self.get_dataset_properties()
         config.set_dataset_properties(len(self.token_map), self.max_label_length)
         self.config = config

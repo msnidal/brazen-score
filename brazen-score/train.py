@@ -60,7 +60,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
     _, label_indices = torch.max(outputs, 2)
 
-    labels = []
+    output_labels = []
     for batch in label_indices:
         batch_labels = []
         for index in batch:
@@ -72,9 +72,11 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
                 batch_labels.append("")
             else:
                 batch_labels.append(token_map[index])
-        labels.append(batch_labels)
+        output_labels.append(batch_labels)
 
-    return {"raw": outputs, "indices": label_indices, "labels": labels, "loss": loss}
+    accuracy = (labels == label_indices).sum().item() / (label_indices.size()[0] * label_indices.size()[1]) if labels is not None else None
+
+    return {"raw": outputs, "indices": label_indices, "labels": output_labels, "loss": loss, "accuracy": accuracy}
 
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
@@ -106,7 +108,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         loss = outputs["loss"]
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
         optimizer.step()
 
         # warmup
@@ -126,7 +128,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             parameter_group["lr"] = learning_rate
 
         if use_wandb:
-            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate})
+            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate, "accuracy": outputs["accuracy"]})
 
 
 

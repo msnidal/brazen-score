@@ -22,7 +22,7 @@ RAW_IMAGE_SHAPE = (2048, 2048)
 IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 
 # Training
-BATCH_SIZE = 16
+BATCH_SIZE = 24
 EPOCH_SIZE = 1
 
 LEARNING_RATE = 2e-4
@@ -32,7 +32,7 @@ WEIGHT_DECAY = 0.1
 
 NUM_WORKERS = 8
 
-DROPOUT_RATE = 0.1
+DROPOUT_RATE = 0.05
 GRAD_NORM_CLIP = 10.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
@@ -41,6 +41,9 @@ WARMUP_SAMPLES = 100000
 EXIT_AFTER = 500000
 
 STANDARD_DEVIATION = 0.02
+
+IMAGE_MEAN = 0.5
+IMAGE_STANDARD_DEVIATION = 0.5
 
 class BrazenParameters:
     def __init__(
@@ -69,7 +72,9 @@ class BrazenParameters:
         git_commit=GIT_COMMIT,
         warmup_samples=WARMUP_SAMPLES,
         exit_after=EXIT_AFTER,
-        standard_deviation=STANDARD_DEVIATION
+        standard_deviation=STANDARD_DEVIATION,
+        image_mean=IMAGE_MEAN,
+        image_standard_deviation=IMAGE_STANDARD_DEVIATION
     ):
         params = locals()
         self.params = {}
