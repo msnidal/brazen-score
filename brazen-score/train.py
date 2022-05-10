@@ -116,11 +116,11 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         ramp_scaler = (0.5 * math.pi) / config.warmup_samples
 
         if samples_processed < config.warmup_samples:
-            learning_rate = math.sin(samples_processed * ramp_scaler) * config.learning_rate
+            learning_rate = (samples_processed / config.warmup_samples) * config.learning_rate
         elif samples_processed >= config.warmup_samples and samples_processed < wind_down_samples:
             learning_rate = config.learning_rate
         elif samples_processed >= wind_down_samples:
-            learning_rate = math.cos((samples_processed - wind_down_samples) * ramp_scaler) * config.learning_rate
+            learning_rate = ((samples_processed - wind_down_samples) / config.warmup_samples) * config.learning_rate
         else:
             raise Exception("Unable to determine sample processed learning rate")
 
