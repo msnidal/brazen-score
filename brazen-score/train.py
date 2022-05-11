@@ -120,7 +120,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         elif samples_processed >= config.warmup_samples and samples_processed < wind_down_samples:
             learning_rate = config.learning_rate
         elif samples_processed >= wind_down_samples:
-            learning_rate = ((samples_processed - wind_down_samples) / config.warmup_samples) * config.learning_rate
+            learning_rate = config.learning_rate - (((samples_processed - wind_down_samples) / config.warmup_samples) * config.learning_rate)
         else:
             raise Exception("Unable to determine sample processed learning rate")
 
@@ -191,7 +191,7 @@ if __name__ == "__main__":
             print(f"{index}\t: {model_path}")
         prompt = ""
         while prompt != "T" and prompt != "L":
-            prompt = input("Enter T to train or L to load: ")
+            prompt = input("Enter L to load checkpoint or T to train from scratch: ")
         if prompt == "L":
             while prompt not in range(len(trained_models)):
                 prompt = int(input("Select the model index from above: "))
@@ -203,27 +203,25 @@ if __name__ == "__main__":
 
             print("Done loading!")
             did_load = True
+            config.load_checkpoint(selection)
 
     if not did_load:
         print("Creating BrazenNet...")
         model = neural_network.BrazenNet(config).to(device)
-
         configured_init_weights = functools.partial(init_weights, standard_deviation=config.standard_deviation)
         model.apply(configured_init_weights)
         print("Done creating!")
 
-        print("Training model...")
-        use_wandb=None
-        while use_wandb not in [True, False]:
-            wandb_prompt = input("Use wandb? (T/F): ")
-            use_wandb = wandb_prompt == "T" if wandb_prompt in ["T", "F"] else None
+    print("Training model...")
+    use_wandb=None
+    while use_wandb not in [True, False]:
+        wandb_prompt = input("Use wandb? (T/F): ")
+        use_wandb = wandb_prompt == "T" if wandb_prompt in ["T", "F"] else None
 
-        train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
-        print("Done training!")
+    train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
+    print("Done training!")
 
-        print("Saving model...")
-        model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
-        torch.save(model.state_dict(), model_path)
-        print("Done saving model!")
-
-    test(model, test_loader, device, token_map, config)
+    print("Saving model...")
+    model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
+    torch.save(model.state_dict(), model_path)
+    print("Done saving model!")

@@ -25,7 +25,7 @@ IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 BATCH_SIZE = 24
 EPOCH_SIZE = 1
 
-LEARNING_RATE = 2e-4
+LEARNING_RATE = 1e-4
 BETAS = (0.9, 0.98)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
@@ -37,8 +37,8 @@ GRAD_NORM_CLIP = 1.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
-WARMUP_SAMPLES = 100000
-EXIT_AFTER = 500000
+WARMUP_SAMPLES = 200000
+EXIT_AFTER = 800000
 
 STANDARD_DEVIATION = 0.02
 
@@ -100,5 +100,11 @@ class BrazenParameters:
 
         self.sequence_length = label_length + 1 # includes EOS symbol
     
+    def load_checkpoint(self, model_name):
+        """ Set the checkpoint name in the config so runs can be re-created """
+        self.model_loaded = model_name
+        self.params["model_loaded"] = model_name
+
     def __eq__(self, other):
         return self.params == other.params
+
