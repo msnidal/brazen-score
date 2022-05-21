@@ -20,201 +20,7 @@ from dataset import PadToLargest
 import parameters
 
 # Measure choices from https://abjad.github.io/examples/corpus-selection.html
-MEASURE_CHOICES = [
-    [
-        ("c4 r8", "e''8 c''8 g'8"),
-        ("<c e>4 r8", "g'8 c''8 e''8"),
-        ("<c e>4 r8", "g''8 ( e''8 c''8 )"),
-        ("<c e>4 r8", "c''16 b'16 c''16 e''16 g'16 c''16"),
-        ("<c e>4 r8", "c'''16 b''16 c'''16 g''16 e''16 c''16"),
-        ("c4 r8", "e''16 d''16 e''16 g''16 c'''16 g''16"),
-        ("<c e>4 r8", "g''8 f''16 e''16 d''16 c''16"),
-        ("<c e>4 r8", "e''16 c''16 g''16 e''16 c'''16 g''16"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "c''8 g'8 e''8"),
-        ("<c e>4 r8", "g''8 c''8 e''8"),
-        ("c8 c8 c8", "<e' c''>8 <e' c''>8 <e' c''>8"),
-    ],
-    [
-        ("c4 r8", "e''8 c''8 g'8"),
-        ("<c e>4 r8", "g'8 c''8 e''8"),
-        ("<c e>4 r8", "g''8 e''8 c''8"),
-        ("<e g>4 r8", "c''16 g'16 c''16 e''16 g'16 c''16"),
-        ("<c e>4 r8", "c'''16 b''16 c'''16 g''16 e''16 c''16"),
-        ("c4 r8", "e''16 d''16 e''16 g''16 c'''16 g''16"),
-        ("<c e>4 r8", "g''8 f''16 e''16 d''16 c''16"),
-        ("<c e>4 r8", "c''16 g'16 e''16 c''16 g''16 e''16"),
-        ("<c e>4 r8", "c''8 g'8 e''8"),
-        ("<c e>4 <c g>8", "g''8 c''8 e''8"),
-        ("c8 c8 c8", "<e' c''>8 <e' c''>8 <e' c''>8"),
-    ],
-    [
-        ("<b, g>4 g,8", "d''16 e''16 f''16 d''16 c''16 b'16"),
-        ("g,4 r8", "b'8 d''8 g''8"),
-        ("g,4 r8", "b'8 d''16 b'16 a'16 g'16"),
-        ("<g b>4 r8", "f''8 d''8 b'8"),
-        ("<b, d>4 r8", "g''16 fs''16 g''16 d''16 b'16 g'16"),
-        ("<g b>4 r8", "f''16 e''16 f''16 d''16 c''16 b'16"),
-        ("<g, g>4 <b, g>8", "b'16 c''16 d''16 e''16 f''16 d''16"),
-        ("g8 g8 g8", "<b' d''>8 <b' d''>8 <b' d''>8"),
-        ("g,4 r8", "b'16 c''16 d''16 b'16 a'16 g'16"),
-        ("b,4 r8", "d''8 ( b'8 g'8 )"),
-        ("g4 r8", "b'16 a'16 b'16 c''16 d''16 b'16"),
-    ],
-    [
-        ("<c e>4 r8", "c''16 b'16 c''16 e''16 g'8"),
-        ("c4 r8", "e''16 c''16 b'16 c''16 g'8"),
-        ("<e g>4 r8", "c''8 ( g'8 e'8 )"),
-        ("<e g>4 r8", "c''8 e''8 g'8"),
-        ("<e g>4 r8", "c''16 b'16 c''16 g'16 e'16 c'16"),
-        ("<c e>4 r8", "c''8 c''16 d''16 e''8"),
-        ("c4 r8", "<c'' e''>8 <c'' e''>16 <d'' f''>16 <e'' g''>8"),
-        ("<e g>4 r8", "c''8 e''16 c''16 g'8"),
-        ("<e g>4 r8", "c''16 g'16 e''16 c''16 g''8"),
-        ("<e g>4 r8", "c''8 e''16 c''16 g''8"),
-        ("<e g>4 r8", "c''16 e''16 c''16 g'16 e'8"),
-    ],
-    [
-        ("c4 r8", "fs''8 a''16 fs''16 d''16 fs''16"),
-        ("c8 c8 c8", "<fs' d''>8 <d'' fs''>8 <fs'' a''>8"),
-        ("c4 r8", "d''16 a'16 fs''16 d''16 a''16 fs''16"),
-        ("c8 c8 c8", "<fs' d''>8 <fs' d''>8 <fs' d''>8"),
-        ("c4 r8", "d''8 a'8 ^\\turn fs''8"),
-        ("c4 r8", "d''16 cs''16 d''16 fs''16 a''16 fs''16"),
-        ("<c a>4 <c a>8", "fs''8 a''8 d''8"),
-        ("<c fs>8 <c fs>8 <c a>8", "a'8 a'16 d''16 fs''8"),
-        ("c8 c8 c8", "<d'' fs''>8 <d'' fs''>8 <d'' fs''>8"),
-        ("<c d>8 <c d>8 <c d>8", "fs''8 fs''16 d''16 a''8"),
-        ("<c a>4 r8", "fs''16 d''16 a'16 a''16 fs''16 d''16"),
-    ],
-    [
-        ("<b, d>8 <b, d>8 <b, d>8", "g''16 fs''16 g''16 b''16 d''8"),
-        ("<b, d>4 r8", "g''8 b''16 g''16 d''16 b'16"),
-        ("<b, d>4 r8", "g''8 b''8 d''8"),
-        ("<b, g>4 r8", "a'8 fs'16 g'16 b'16 g''16"),
-        ("<b, d>4 <b, g>8", "g''16 fs''16 g''16 d''16 b'16 g'16"),
-        ("b,4 r8", "g''8 b''16 g''16 d''16 g''16"),
-        ("<b, g>4 r8", "d''8 g''16 d''16 b'16 d''16"),
-        ("<b, g>4 r8", "d''8 d''16 g''16 b''8"),
-        ("<b, d>8 <b, d>8 <b, g>8", "a''16 g''16 fs''16 g''16 d''8"),
-        ("<b, d>4 r8", "g''8 g''16 d''16 b''8"),
-        ("<b, d>4 r8", "g''16 b''16 g''16 d''16 b'8"),
-    ],
-    [
-        ("c8 d8 d,8", "e''16 c''16 b'16 a'16 g'16 fs'16"),
-        ("c8 d8 d,8", "a'16 e''16 <b' d''>16 <a' c''>16 <g' b'>16 <fs' a'>16"),
-        (
-            "c8 d8 d,8",
-            "<b' d''>16 ( <a' c''>16 ) <a' c''>16 ( <g' b'>16 ) <g' b'>16 ( <fs' a'>16 )",
-        ),
-        ("c8 d8 d,8", "e''16 g''16 d''16 c''16 b'16 a'16"),
-        ("c8 d8 d,8", "a'16 e''16 d''16 g''16 fs''16 a''16"),
-        ("c8 d8 d,8", "e''16 a''16 g''16 b''16 fs''16 a''16"),
-        ("c8 d8 d,8", "c''16 e''16 g''16 d''16 a'16 fs''16"),
-        ("c8 d8 d,8", "e''16 g''16 d''16 g''16 a'16 fs''16"),
-        ("c8 d8 d,8", "e''16 c''16 b'16 g'16 a'16 fs'16"),
-        ("c8 d8 d,8", "e''16 c'''16 b''16 g''16 a''16 fs''16"),
-        ("c8 d8 d,8", "a'8 d''16 c''16 b'16 a'16"),
-    ],
-    [
-        ("g,8 g16 f16 e16 d16", "<g' b' d'' g''>4 r8"),
-        ("g,8 b16 g16 fs16 e16", "<g' b' d'' g''>4 r8"),
-    ],
-    [
-        ("d4 c8", "fs''8 a''16 fs''16 d''16 fs''16"),
-        ("<d fs>4 r8", "d''16 a'16 d''16 fs''16 a''16 fs''16"),
-        ("<d a>8 <d fs>8 <c d>8", "fs''8 a''8 fs''8"),
-        ("<c a>4 <c a>8", "fs''16 a''16 d'''16 a''16 fs''16 a''16"),
-        ("d4 c8", "d'16 fs'16 a'16 d''16 fs''16 a''16"),
-        ("d,16 d16 cs16 d16 c16 d16", "<a' d'' fs''>8 fs''4 ^\\trill"),
-        ("<d fs>4 <c fs>8", "a''8 ( fs''8 d''8 )"),
-        ("<d fs>4 <c fs>8", "d'''8 a''16 fs''16 d''16 a'16"),
-        ("<d fs>4 r8", "d''16 a'16 d''8 fs''8"),
-        ("<c a>4 <c a>8", "fs''16 d''16 a'8 fs''8"),
-        ("<d fs>4 <c a>8", "a'8 d''8 fs''8"),
-    ],
-    [
-        ("<b, g>4 r8", "g''8 b''16 g''16 d''8"),
-        ("b,16 d16 g16 d16 b,16 g,16", "g''8 g'8 g'8"),
-        ("b,4 r8", "g''16 b''16 g''16 b''16 d''8"),
-        ("<b, d>4 <b, d>8", "a''16 g''16 b''16 g''16 d''16 g''16"),
-        ("<b, d>4 <b, d>8", "g''8 d''16 b'16 g'8"),
-        ("<b, d>4 <b, d>8", "g''16 b''16 d'''16 b''16 g''8"),
-        ("<b, d>4 r8", "g''16 b''16 g''16 d''16 b'16 g'16"),
-        ("<b, d>4 <b, d>8", "g''16 d''16 g''16 b''16 g''16 d''16"),
-        ("<b, d>4 <b, g>8", "g''16 b''16 g''8 d''8"),
-        ("g,16 b,16 g8 b,8", "g''8 d''4 ^\\trill"),
-        ("b,4 r8", "g''8 b''16 d'''16 d''8"),
-    ],
-    [
-        ("c16 e16 g16 e16 c'16 c16", "<c'' e''>8 <c'' e''>8 <c'' e''>8"),
-        ("e4 e16 c16", "c''16 g'16 c''16 e''16 g''16 <c'' e''>16"),
-        ("<c g>4 <c e>8", "e''8 g''16 e''16 c''8"),
-        ("<c g>4 r8", "e''16 c''16 e''16 g''16 c'''16 g''16"),
-        ("<c g>4 <c g>8", "e''16 g''16 c'''16 g''16 e''16 c''16"),
-        ("c16 b,16 c16 d16 e16 fs16", "<g' c'' e''>8 e''4 ^\\trill"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "e''8 c''8 g'8"),
-        ("<c g>4 <c e>8", "e''8 c''16 e''16 g''16 c'''16"),
-        ("<c g>4 <c e>8", "e''16 c''16 e''8 g''8"),
-        ("<c g>4 <c g>8", "e''16 c''16 g'8 e''8"),
-        ("<c g>4 <c e>8", "e''8 ( g''8 c'''8 )"),
-    ],
-    [
-        ("g4 g,8", "<c'' e''>8 <b' d''>8 r8"),
-        ("<g, g>4 g8", "d''16 b'16 g'8 r8"),
-        ("g8 g,8 r8", "<c'' e''>8 <b' d''>16 <g' b'>16 g'8"),
-        ("g4 r8", "e''16 c''16 d''16 b'16 g'8"),
-        ("g8 g,8 r8", "g''16 e''16 d''16 b'16 g'8"),
-        ("g4 g,8", "b'16 d''16 g''16 d''16 b'8"),
-        ("g8 g,8 r8", "e''16 c''16 b'16 d''16 g''8"),
-        ("<g b>4 r8", "d''16 b''16 g''16 d''16 b'8"),
-        ("<b, g>4 <b, d>8", "d''16 b'16 g'8 g''8"),
-        ("g16 fs16 g16 d16 b,16 g,16", "d''8 g'4"),
-        ("g16 fs16 g16 d16 b,16 g,16", "d''8 g'4"),
-    ],
-    [
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "e''8 c''8 g'8"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "g'8 c''8 e''8"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "g''8 e''8 c''8"),
-        ("<c e>4 <e g>8", "c''16 b'16 c''16 e''16 g'16 c''16"),
-        ("<c e>4 <c g>8", "c'''16 b''16 c'''16 g''16 e''16 c''16"),
-        ("<c g>4 <c e>8", "e''16 d''16 e''16 g''16 c'''16 g''16"),
-        ("<c e>4 r8", "g''8 f''16 e''16 d''16 c''16"),
-        ("<c e>4 r8", "c''16 g'16 e''16 c''16 g''16 e''16"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "c''8 g'8 e''8"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "g''8 c''8 e''8"),
-        ("c8 c8 c8", "<e' c''>8 <e' c''>8 <e' c''>8"),
-    ],
-    [
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "e''8 ( c''8 g'8 )"),
-        ("<c e>4 <c g>8", "g'8 ( c''8 e''8 )"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "g''8 e''8 c''8"),
-        ("<c e>4 <c e>8", "c''16 b'16 c''16 e''16 g'16 c''16"),
-        ("<c e>4 r8", "c'''16 b''16 c'''16 g''16 e''16 c''16"),
-        ("<c g>4 <c e>8", "e''16 d''16 e''16 g''16 c'''16 g''16"),
-        ("<c e>4 <e g>8", "g''8 f''16 e''16 d''16 c''16"),
-        ("<c e>4 r8", "c''16 g'16 e''16 c''16 g''16 e''16"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "c''8 g'8 e''8"),
-        ("<c e>16 g16 <c e>16 g16 <c e>16 g16", "g''8 c''8 e''8"),
-        ("c8 c8 c8", "<e' c''>8 <e' c''>8 <e' c''>8"),
-    ],
-    [
-        ("<f a>4 <g d'>8", "d''16 f''16 d''16 f''16 b'16 d''16"),
-        ("f4 g8", "d''16 f''16 a''16 f''16 d''16 b'16"),
-        ("f4 g8", "d''16 f''16 a'16 d''16 b'16 d''16"),
-        ("f4 g8", "d''16 ( cs''16 ) d''16 f''16 g'16 b'16"),
-        ("f8 d8 g8", "f''8 d''8 g''8"),
-        ("f16 e16 d16 e16 f16 g16", "f''16 e''16 d''16 e''16 f''16 g''16"),
-        ("f16 e16 d8 g8", "f''16 e''16 d''8 g''8"),
-        ("f4 g8", "f''16 e''16 d''16 c''16 b'16 d''16"),
-        ("f4 g8", "f''16 d''16 a'8 b'8"),
-        ("f4 g8", "f''16 a''16 a'8 b'16 d''16"),
-        ("f4 g8", "a'8 f''16 d''16 a'16 b'16"),
-    ],
-    [
-        ("c8 g,8 c,8", "c''4 r8"),
-        ("c4 c,8", "c''8 c'8 r8"),
-    ]
-]
+MEASURE_FRAGMENTS_FILENAME = "symposium_fragments.pickle"
 
 PITCHES = string.ascii_uppercase[:7]
 ACCIDENTALS = ["", "b", "#"]
@@ -225,6 +31,9 @@ NUM_MEASURES = [4, 8]
 DURATIONS = {1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 32: "thirty_second"}
 OUTPUT_DIRECTORY = "scores"
 DATASET_PROPERTIES_PATH = Path(f"symposium_properties.pickle")
+
+FRAGMENT_RATIO_RANGE = (0.4, 0.7)
+REST_RATIO_RANGE = (0.2, 0.4)
 
 
 class Symposium(torch.utils.data.IterableDataset):
@@ -244,11 +53,16 @@ class Symposium(torch.utils.data.IterableDataset):
             )
         ] + transforms
         self.transforms = tvtransforms.Compose(compose_transforms)
+
+        self.random = random.Random(seed)
+
+        with open(MEASURE_FRAGMENTS_FILENAME, "rb") as file:
+            self.measure_fragments = pickle.load(file)
+
         self.token_map, self.max_label_length = self.get_dataset_properties()
         config.set_dataset_properties(len(self.token_map), self.max_label_length)
         self.config = config
 
-        self.random = random.Random(seed)
 
     def __iter__(self):
         """ Implement the dataset as an iterator - see __next__
@@ -262,18 +76,23 @@ class Symposium(torch.utils.data.IterableDataset):
             self.random = random.Random(worker_info.seed)
             return self
 
-    def generate_fragment(self):
+    def generate_fragment(self, clef=CLEFS[0], name="measure", rest_threshold=0.2):
         """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
         """
-        count_notes = self.random.randint(1, 8)
+        count_notes = self.random.randint(1, 4)
         notes = []
         for _ in range(count_notes):
             pitch = self.random.choice(PITCHES)
             accidental = self.random.choice(ACCIDENTALS)
-            note = abjad.Note(f"{pitch}{accidental}")
+            duration = self.random.choice(list(DURATIONS.keys()))
+
+            if self.random.uniform(0, 1) < rest_threshold:
+                note = abjad.Rest((1, duration))
+            else:
+                note = abjad.Note.from_pitch_and_duration(f"{pitch}{accidental}", (1, duration))
             notes.append(note)
         
-        return notes
+        return abjad.Container(notes, name=name)
             
     def extract_timestamp(self, file_name, identifier_token):
         """ Extract a timestamp from an abjad-generated score filename """
@@ -375,14 +194,17 @@ class Symposium(torch.utils.data.IterableDataset):
             "time_signature": (self.random.choice(TIME_SIGNATURES["numerator"]), self.random.choice(TIME_SIGNATURES["denominator"])),
             "transpose_sequence": self.random.choice(TRANSPOSE_RANGE),
             "num_measures": self.random.randint(NUM_MEASURES[0], NUM_MEASURES[1]),
-            "clef": self.random.choice(CLEFS)
+            "clef": self.random.choice(CLEFS),
+            "fragment_ratio": self.random.uniform(FRAGMENT_RATIO_RANGE[0], FRAGMENT_RATIO_RANGE[1]),
+            "rest_ratio": self.random.uniform(REST_RATIO_RANGE[0], REST_RATIO_RANGE[1])
         }
-        
-        measure_choices = {
-            "treble": [measure[1] for measure_group in MEASURE_CHOICES for measure in measure_group],
-            "bass": [measure[0] for measure_group in MEASURE_CHOICES for measure in measure_group]
-        }
-        measures = [abjad.Container(self.random.choice(measure_choices[config["clef"]]), name=f"measure_{index}") for index in range(config["num_measures"])]
+        # Pick some random fragments
+        measures = []
+        for index in range(config["num_measures"]):
+            if random.uniform(0, 1) < config["fragment_ratio"]:
+                measures.append(self.generate_fragment(clef=config["clef"], name=f"measure_{index}", rest_threshold=config["rest_ratio"]))
+            else:
+                measures.append(abjad.Container(self.random.choice(self.measure_fragments[config["clef"]]), name=f"measure_{index}"))
 
         # Transpose measures in-place
         transpose_sequence = self.get_transpose_sequence(config["num_measures"])
