@@ -282,7 +282,10 @@ class Symposium(torch.utils.data.IterableDataset):
 
 
 if __name__ == "__main__":
+    from matplotlib import pyplot as plt
+
     config = parameters.BrazenParameters()
     symposium = Symposium(config)
     score, label = next(symposium)
+    plt.imshow(score)
     print(label)
