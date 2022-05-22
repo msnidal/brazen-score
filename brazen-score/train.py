@@ -96,39 +96,33 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             print(f"Done training after {samples_processed} samples!")
             break
         
-        if batch_index % 1000 == 0:
-            #print("Saving intermediate model")
+        if batch_index % config.save_every == 0:
             model_path = MODEL_FOLDER / "train.pth"
             torch.save(model.state_dict(), model_path)
 
         inputs, labels = inputs.to(device), labels.to(device)
-        model.zero_grad()
 
         outputs = infer(model, inputs, token_map, config, labels=labels)
         loss = outputs["loss"]
-
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
-        optimizer.step()
 
-        # warmup
-        wind_down_samples = config.exit_after - config.warmup_samples
-        ramp_scaler = (0.5 * math.pi) / config.warmup_samples
+        if batch_index % config.optimize_every == 0 and batch_index != 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+            optimizer.step()
+            optimizer.zero_grad()
 
-        if samples_processed < config.warmup_samples:
-            learning_rate = (samples_processed / config.warmup_samples) * config.learning_rate
-        elif samples_processed >= config.warmup_samples and samples_processed < wind_down_samples:
-            learning_rate = config.learning_rate
-        elif samples_processed >= wind_down_samples:
-            learning_rate = config.learning_rate - (((samples_processed - wind_down_samples) / config.warmup_samples) * config.learning_rate)
-        else:
-            raise Exception("Unable to determine sample processed learning rate")
+            wind_down_samples = config.exit_after - config.warmup_samples
+            if samples_processed < config.warmup_samples:
+                learning_rate = (samples_processed / config.warmup_samples) * config.learning_rate
+            else:
+                progress = float(samples_processed - config.warmup_samples) / float(max(1, wind_down_samples))
+                learning_rate = max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
-        for parameter_group in optimizer.param_groups:
-            parameter_group["lr"] = learning_rate
+            for parameter_group in optimizer.param_groups:
+                parameter_group["lr"] = learning_rate
 
-        if use_wandb:
-            wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate, "accuracy": outputs["accuracy"]})
+            if use_wandb:
+                wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate, "accuracy": outputs["accuracy"]})
 
 
 

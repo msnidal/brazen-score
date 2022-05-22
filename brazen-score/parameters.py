@@ -23,10 +23,12 @@ IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 
 # Training
 BATCH_SIZE = 24
+OPTIMIZE_EVERY = 16
 EPOCH_SIZE = 1
+SAVE_EVERY = 10000
 
 LEARNING_RATE = 3e-4
-BETAS = (0.9, 0.98)
+BETAS = (0.9, 0.95)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
 
@@ -37,8 +39,8 @@ GRAD_NORM_CLIP = 1.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
-WARMUP_SAMPLES = 100000
-EXIT_AFTER = 500000
+WARMUP_SAMPLES = 200000
+EXIT_AFTER = 600000
 
 STANDARD_DEVIATION = 0.02
 
@@ -62,6 +64,8 @@ class BrazenParameters:
         label_length=LABEL_LENGTH,
         num_symbols=NUM_SYMBOLS,
         batch_size=BATCH_SIZE,
+        optimize_every=OPTIMIZE_EVERY,
+        save_every=SAVE_EVERY,
         eps=EPS,
         betas=BETAS,
         learning_rate=LEARNING_RATE,
