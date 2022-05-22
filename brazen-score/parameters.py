@@ -25,7 +25,7 @@ IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
 BATCH_SIZE = 24
 EPOCH_SIZE = 1
 
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 3e-4
 BETAS = (0.9, 0.98)
 EPS = 1e-9
 WEIGHT_DECAY = 0.1
@@ -37,8 +37,8 @@ GRAD_NORM_CLIP = 1.0
 
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
-WARMUP_SAMPLES = 200000
-EXIT_AFTER = 800000
+WARMUP_SAMPLES = 100000
+EXIT_AFTER = 500000
 
 STANDARD_DEVIATION = 0.02
 
