@@ -116,7 +116,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
                 learning_rate = (samples_processed / config.warmup_samples) * config.learning_rate
             else:
                 progress = float(samples_processed - config.warmup_samples) / float(max(1, wind_down_samples))
-                learning_rate = max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress)))
+                learning_rate = max(0.1, 0.5 * (1.0 + math.cos(math.pi * progress))) * config.learning_rate
 
             for parameter_group in optimizer.param_groups:
                 parameter_group["lr"] = learning_rate
