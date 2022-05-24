@@ -90,6 +90,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         wandb.init(project="brazen-score", entity="msnidal", config=model_config)
         wandb.watch(model)
 
+    running_accuracy = 0
     for batch_index, (inputs, labels) in enumerate(train_loader):  # get index and batch
         samples_processed = batch_index * config.batch_size
         if samples_processed > config.exit_after:
@@ -103,6 +104,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         inputs, labels = inputs.to(device), labels.to(device)
 
         outputs = infer(model, inputs, token_map, config, labels=labels)
+        running_accuracy += outputs["accuracy"]
         loss = outputs["loss"]
         loss.backward()
 
@@ -121,8 +123,12 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             for parameter_group in optimizer.param_groups:
                 parameter_group["lr"] = learning_rate
 
+            accuracy = running_accuracy / config.optimize_every
+            running_accuracy = 0
+
             if use_wandb:
-                wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate, "accuracy": outputs["accuracy"]})
+                wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate, "accuracy": accuracy})
+            
 
 
 
