@@ -1,7 +1,9 @@
 from pathlib import Path
 import math
+import hashlib
 import functools
 import os
+from datetime import datetime
 import time
 
 from matplotlib import pyplot as plt
@@ -41,6 +43,14 @@ def count_trainable_params(model):
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     return params
+
+
+def validate(date_text, format_template):
+    try:
+        datetime.strptime(date_text, format_template)
+    except ValueError:
+        return False
+    return True
 
 
 def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
@@ -189,18 +199,31 @@ if __name__ == "__main__":
     print(f"Using {device} device")
 
     trained_models = list(MODEL_FOLDER.glob("**/*.pth"))
+    date_template = "%a %b %d %X %Y"
+    date_models, other_models = {}, []
+    for model in trained_models:
+        if validate(model.stem, date_template) is True:
+            date_models[datetime.strptime(model.stem, date_template)] = model
+        else:
+            other_models.append(model)
+    
+    sorted_models = []
+    for key in sorted(date_models.keys(), reverse=True):
+        sorted_models.append(date_models[key])
+    sorted_models += other_models
+
     did_load = False
     if trained_models:
         print("Found the following models: ")
-        for index, model_path in enumerate(trained_models):
+        for index, model_path in enumerate(sorted_models):
             print(f"{index}\t: {model_path}")
         prompt = ""
         while prompt != "T" and prompt != "L":
             prompt = input("Enter L to load checkpoint or T to train from scratch: ")
         if prompt == "L":
-            while prompt not in range(len(trained_models)):
+            while prompt not in range(len(sorted_models)):
                 prompt = int(input("Select the model index from above: "))
-            selection = trained_models[prompt]
+            selection = sorted_models[prompt]
             print(f"Loading model {selection}...")
             model_state = torch.load(selection)
             model = neural_network.BrazenNet(config).to(device)
@@ -208,6 +231,9 @@ if __name__ == "__main__":
 
             print("Done loading!")
             did_load = True
+            model_seed = int(hashlib.sha256(selection.stem.encode("utf-8")).hexdigest(), 16) % 10**8
+            torch.manual_seed(model_seed)
+            symposium.set_seed(model_seed)
             config.load_checkpoint(selection)
 
     if not did_load:

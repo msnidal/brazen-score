@@ -75,6 +75,9 @@ class Symposium(torch.utils.data.IterableDataset):
             print(f"Setting worker {worker_info.id} to seed {worker_info.seed}")
             self.random = random.Random(worker_info.seed)
             return self
+    
+    def set_seed(self, seed:int = 0):
+        self.random = random.Random(seed)
 
     def generate_fragment(self, clef=CLEFS[0], name="measure", rest_threshold=0.2):
         """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
