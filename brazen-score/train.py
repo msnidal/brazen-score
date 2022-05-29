@@ -58,7 +58,7 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
     for index, image in enumerate(image_batch):
         plt.imshow(image)
         plt.savefig(f"{output_folder}/{name_base}_{index}.png")
-        label = labels
+        label = labels[index]
         with open(f"{output_folder}/{name_base}_{index}.txt", "w") as file:
             file.write(" ".join(label))
 
@@ -68,7 +68,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     outputs, loss = model(
         inputs, labels=labels
     )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
-    _, label_indices = torch.max(outputs, 2)
+    _, label_indices = torch.max(outputs, dim=-1)
 
     output_labels = []
     for batch in label_indices:
@@ -147,7 +147,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
 
 
 
-def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=10):
+def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=0):
     """Test"""
     model.eval()  # eval mode
 
@@ -218,8 +218,8 @@ if __name__ == "__main__":
         for index, model_path in enumerate(sorted_models):
             print(f"{index}\t: {model_path}")
         prompt = ""
-        while prompt != "T" and prompt != "L":
-            prompt = input("Enter L to load checkpoint or T to train from scratch: ")
+        while prompt != "N" and prompt != "L":
+            prompt = input("Enter L to load checkpoint or N to train from scratch: ")
         if prompt == "L":
             while prompt not in range(len(sorted_models)):
                 prompt = int(input("Select the model index from above: "))
@@ -242,17 +242,25 @@ if __name__ == "__main__":
         configured_init_weights = functools.partial(init_weights, standard_deviation=config.standard_deviation)
         model.apply(configured_init_weights)
         print("Done creating!")
+    
+    prompt = None
+    while prompt not in ("T", "I"):
+        prompt = input("Enter T for train or I for infer mode: ")
 
-    print("Training model...")
-    use_wandb=None
-    while use_wandb not in [True, False]:
-        wandb_prompt = input("Use wandb? (T/F): ")
-        use_wandb = wandb_prompt == "T" if wandb_prompt in ["T", "F"] else None
+    if prompt == "T":
+        print("Training model...")
+        use_wandb=None
+        while use_wandb not in [True, False]:
+            wandb_prompt = input("Use wandb? (T/F): ")
+            use_wandb = wandb_prompt == "T" if wandb_prompt in ["T", "F"] else None
 
-    train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
-    print("Done training!")
+        train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
+        print("Done training!")
 
-    print("Saving model...")
-    model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
-    torch.save(model.state_dict(), model_path)
-    print("Done saving model!")
+        print("Saving model...")
+        model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
+        torch.save(model.state_dict(), model_path)
+        print("Done saving model!")
+    else:
+        print("Inferring...")
+        test(model, test_loader, device, token_map, config)

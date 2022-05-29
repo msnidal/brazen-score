@@ -477,13 +477,16 @@ class BrazenNet(nn.Module):
             labels = torch.tensor(
                 [self.config.beginning_of_sequence if index == 0 else self.config.padding_symbol for index in range(self.output_length)], device=images.device
             )  # Begin masked
-            batch_labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
-            embeddings[DECODER] = self.embed_tokens(batch_labels) #+ self.embed_positions(positions)
+            labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
 
             for index in range(self.output_length):
+                embeddings[DECODER] = self.embed_tokens(labels) #+ self.embed_positions(positions)
+
                 decoder_outputs = self.decoder(embeddings)
                 output_sequence = self.output(decoder_outputs[DECODER])
-                labels[: index + 1] = torch.max(output_sequence, dim=-1)[1][0, : index + 1]
+                labels = torch.max(output_sequence, dim=-1)[1]
+                labels = torch.roll(labels, shifts=1, dims=-1)
+                labels[:, 0] = self.config.beginning_of_sequence
 
             loss = None
         else:
