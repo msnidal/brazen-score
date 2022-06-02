@@ -40,7 +40,7 @@ GRAD_NORM_CLIP = 1.0
 GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
 
 WARMUP_SAMPLES = 300000
-EXIT_AFTER = 1500000
+EXIT_AFTER = 1800000
 
 STANDARD_DEVIATION = 0.02
 
