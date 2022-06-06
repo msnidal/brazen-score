@@ -27,10 +27,11 @@ ACCIDENTALS = ["", "b", "#"]
 CLEFS = ["treble", "bass"]
 TIME_SIGNATURES = {"numerator": (2, 3, 4, 8), "denominator": (2, 4, 8)}
 TRANSPOSE_RANGE = [-5, 5]
-NUM_MEASURES = [4, 8]
+MEASURE_DISTRIBUTION = {"mean": 6, "sigma": 4, "min": 1, "max": 8}
 DURATIONS = {1: "whole", 2: "half", 4: "quarter", 8: "eighth", 16: "sixteenth", 32: "thirty_second"}
 OUTPUT_DIRECTORY = "scores"
 DATASET_PROPERTIES_PATH = Path(f"symposium_properties.pickle")
+STAFF_SIZES = [x for x in range(23, 27)]
 
 FRAGMENT_RATIO_RANGE = (0.4, 0.7)
 REST_RATIO_RANGE = (0.2, 0.4)
@@ -102,7 +103,7 @@ class Symposium(torch.utils.data.IterableDataset):
         timestamp = file_name.split(f".{identifier_token}.pdf")[0]
         return timestamp
 
-    def get_transpose_sequence(self, num_measures:int=NUM_MEASURES[0]):
+    def get_transpose_sequence(self, num_measures:int):
         f""" Get a transpose sequence of length in the range {TRANSPOSE_RANGE} of the specified length
         """
         transpose_sequence = []
@@ -145,11 +146,22 @@ class Symposium(torch.utils.data.IterableDataset):
             raise Exception("Unknown abjad symbol type called")
         
         return token
-
-    def get_score_image(self, score):
+    
+    def get_score_image(self, score, config):
         """ Convert the score to a torch readable grayscale tensor format
         """
         illustrator = Illustrator(score, output_directory=self.output_directory, should_open=False)
+
+        # Inject staff size manually
+        score_string = illustrator.get_string()
+        injected_string = "#(set-global-staff-size " + str(config["staff_size"]) + ")\n    " 
+
+        insert_before = "\\context Score"
+        insertion_index = score_string.find(insert_before)
+
+        modified_string = score_string[:insertion_index] + injected_string + score_string[insertion_index:]
+        illustrator.string = modified_string
+
         paths, format_time, render_time, success, log = illustrator()
 
         score_paths = {"pdf": paths[0]}
@@ -186,23 +198,32 @@ class Symposium(torch.utils.data.IterableDataset):
         label = torch.tensor(label_indices, dtype=torch.long)
         return label
     
-    def get_score(self):
-        """ Get an abjad score with a label in string format
+    def generate_config(self):
+        """ Pick all of the random parameters that define a unique score
         """
-
         config = {
             "key_mode": "major", # self.random.choice(["major", "minor"]),
             "key_pitch": self.random.choice(PITCHES),
             "key_accidental": self.random.choice(ACCIDENTALS),
             "time_signature": (self.random.choice(TIME_SIGNATURES["numerator"]), self.random.choice(TIME_SIGNATURES["denominator"])),
             "transpose_sequence": self.random.choice(TRANSPOSE_RANGE),
-            "num_measures": self.random.randint(NUM_MEASURES[0], NUM_MEASURES[1]),
+            "num_measures": min(MEASURE_DISTRIBUTION["max"], max(MEASURE_DISTRIBUTION["min"], round(self.random.normalvariate(MEASURE_DISTRIBUTION["mean"], MEASURE_DISTRIBUTION["sigma"])))),
             "clef": self.random.choice(CLEFS),
             "fragment_ratio": self.random.uniform(FRAGMENT_RATIO_RANGE[0], FRAGMENT_RATIO_RANGE[1]),
-            "rest_ratio": self.random.uniform(REST_RATIO_RANGE[0], REST_RATIO_RANGE[1])
+            "rest_ratio": self.random.uniform(REST_RATIO_RANGE[0], REST_RATIO_RANGE[1]),
+            "staff_size": self.random.choice(STAFF_SIZES)
         }
+
+        return config
+    
+
+    def get_score(self, config:dict):
+        """ Get an abjad score with a label in string format based on the parameters from the passed configuration
+        """
+
         # Pick some random fragments
         measures = []
+
         for index in range(config["num_measures"]):
             if random.uniform(0, 1) < config["fragment_ratio"]:
                 measures.append(self.generate_fragment(clef=config["clef"], name=f"measure_{index}", rest_threshold=config["rest_ratio"]))
@@ -254,8 +275,9 @@ class Symposium(torch.utils.data.IterableDataset):
         For more details see https://abjad.github.io/examples/corpus-selection.html
         """
 
-        score, label = self.get_score()
-        image = self.get_score_image(score)
+        config = self.generate_config()
+        score, label = self.get_score(config)
+        image = self.get_score_image(score, config)
         label_indices = self.get_label_indices(label)
 
         return image, label_indices
@@ -291,4 +313,10 @@ if __name__ == "__main__":
     symposium = Symposium(config)
     score, label = next(symposium)
     plt.imshow(score)
-    print(label)
+
+    printed_label = [] 
+    for token in label:
+        if token < len(symposium.token_map):
+            printed_label.append(symposium.token_map[token])
+
+    print(" ".join(printed_label))
