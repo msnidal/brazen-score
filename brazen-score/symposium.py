@@ -154,10 +154,10 @@ class Symposium(torch.utils.data.IterableDataset):
 
         # Inject staff size manually
         score_string = illustrator.get_string()
-        injected_string = "#(set-global-staff-size " + str(config["staff_size"]) + ")\n    " 
+        injected_string = "#(set-global-staff-size " + str(config["staff_size"]) + ")\n" 
 
-        insert_before = "\\context Score"
-        insertion_index = score_string.find(insert_before)
+        insert_after = "\language \"english\"\n"
+        insertion_index = score_string.find(insert_after) + len(insert_after)
 
         modified_string = score_string[:insertion_index] + injected_string + score_string[insertion_index:]
         illustrator.string = modified_string
