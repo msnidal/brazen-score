@@ -1,9 +1,6 @@
 import random
 import string
-from tokenize import String 
 from pathlib import Path
-import hashlib
-import functools
 import pickle5 as pickle
 
 from PIL import Image
@@ -13,10 +10,7 @@ import torch
 from torchvision import transforms as tvtransforms
 import abjad
 from abjad.io import Illustrator
-import dataset
-import train
 
-from dataset import PadToLargest
 import parameters
 
 # Measure choices from https://abjad.github.io/examples/corpus-selection.html
@@ -36,6 +30,35 @@ STAFF_SIZES = [x for x in range(23, 27)]
 FRAGMENT_RATIO_RANGE = (0.4, 0.7)
 REST_RATIO_RANGE = (0.2, 0.4)
 
+COMPOSE_TRANSFORMS = [
+    tvtransforms.ToTensor(), 
+    tvtransforms.Resize(parameters.IMAGE_SHAPE), 
+    tvtransforms.Normalize(
+        (parameters.IMAGE_MEAN), 
+        (parameters.IMAGE_STANDARD_DEVIATION)
+    )
+]
+
+def get_image_from_document(document_path):
+    """ Loads PDF file as a cropped PNG and deletes the associated lilypond and PDF files afterwards
+    """
+    score_paths = {"pdf": document_path}
+    for suffix in [".ly", ".log"]:
+        score_paths[suffix] = score_paths["pdf"].with_suffix(suffix)
+
+    document = fitz.open(score_paths["pdf"])
+    pixel_map = document[0].get_pixmap(colorspace=fitz.csGRAY)
+    image = Image.frombytes("L", [pixel_map.width, pixel_map.height], pixel_map.samples)
+    crop_selector = (0, 0, image.size[0], image.size[0])
+    cropped_image = image.crop(crop_selector)
+
+    # Delete temp files
+    document.close()
+    for path in score_paths.values():
+        if path.exists():
+            path.unlink()
+    
+    return cropped_image
 
 class Symposium(torch.utils.data.IterableDataset):
     def __init__(self, config:parameters.BrazenParameters, output_directory:Path=Path(OUTPUT_DIRECTORY), seed:int=None, transforms=None):
@@ -45,14 +68,7 @@ class Symposium(torch.utils.data.IterableDataset):
         if transforms is None:
             transforms = []
 
-        compose_transforms = [
-            tvtransforms.ToTensor(), 
-            tvtransforms.Resize(config.image_shape), 
-            tvtransforms.Normalize(
-                (config.image_mean), 
-                (config.image_standard_deviation)
-            )
-        ] + transforms
+        compose_transforms = COMPOSE_TRANSFORMS + transforms
         self.transforms = tvtransforms.Compose(compose_transforms)
 
         self.random = random.Random(seed)
@@ -164,25 +180,7 @@ class Symposium(torch.utils.data.IterableDataset):
 
         paths, format_time, render_time, success, log = illustrator()
 
-        score_paths = {"pdf": paths[0]}
-        for suffix in [".ly", ".log"]:
-            score_paths[suffix] = score_paths["pdf"].with_suffix(suffix)
-
-        if success is False:
-            raise Exception("Could not render score")
-
-        document = fitz.open(score_paths["pdf"])
-        pixel_map = document[0].get_pixmap(colorspace=fitz.csGRAY)
-        image = Image.frombytes("L", [pixel_map.width, pixel_map.height], pixel_map.samples)
-        crop_selector = (0, 0, image.size[0], image.size[0])
-        cropped_image = image.crop(crop_selector)
-
-        # Delete temp files
-        document.close()
-        for path in score_paths.values():
-            if path.exists():
-                path.unlink()
-
+        cropped_image = get_image_from_document(paths[0])
         transformed_image = self.transforms(cropped_image)
         transformed_image = torch.squeeze(transformed_image, 0)
 

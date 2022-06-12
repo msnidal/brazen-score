@@ -1,0 +1,4 @@
+PyMuPDF==1.19.6
+Pillow==9.0.1
+einops==0.4.1
+abjad==3.4

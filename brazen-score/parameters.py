@@ -37,7 +37,11 @@ NUM_WORKERS = 8
 DROPOUT_RATE = 0.05
 GRAD_NORM_CLIP = 1.0
 
-GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
+try:
+    GIT_COMMIT = subprocess.check_output(["git", "describe", "--always"]).strip()
+except subprocess.CalledProcessError as e:
+    print(e.output)
+    GIT_COMMIT = "unknown"
 
 WARMUP_SAMPLES = 300000
 EXIT_AFTER = 2100000
@@ -46,6 +50,9 @@ STANDARD_DEVIATION = 0.02
 
 IMAGE_MEAN = 0.5
 IMAGE_STANDARD_DEVIATION = 0.5
+
+DEFAULT_TOKEN_MAP_LENGTH = 779
+DEFAULT_MAX_LABEL_LENGTH = 68
 
 class BrazenParameters:
     def __init__(
@@ -61,8 +68,8 @@ class BrazenParameters:
         encoder_block_stages=ENCODER_BLOCK_STAGES,
         num_decoder_blocks=NUM_DECODER_BLOCKS,
         reduce_factor=REDUCE_FACTOR,
-        label_length=LABEL_LENGTH,
-        num_symbols=NUM_SYMBOLS,
+        label_length=DEFAULT_MAX_LABEL_LENGTH,
+        num_symbols=DEFAULT_TOKEN_MAP_LENGTH,
         batch_size=BATCH_SIZE,
         optimize_every=OPTIMIZE_EVERY,
         save_every=SAVE_EVERY,

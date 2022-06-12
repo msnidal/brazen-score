@@ -13,9 +13,9 @@ import torch
 import numpy as np
 import wandb
 
-import dataset
-import neural_network
+import brazen_score
 import symposium
+import primus
 import parameters
 
 
@@ -62,14 +62,7 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
         with open(f"{output_folder}/{name_base}_{index}.txt", "w") as file:
             file.write(" ".join(label))
 
-
-def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=None):
-    """ """
-    outputs, loss = model(
-        inputs, labels=labels
-    )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
-    _, label_indices = torch.max(outputs, dim=-1)
-
+def generate_label(label_indices, labels=None):
     output_labels = []
     for batch in label_indices:
         batch_labels = []
@@ -85,6 +78,16 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
         output_labels.append(batch_labels)
 
     accuracy = (labels == label_indices).sum().item() / (label_indices.size()[0] * label_indices.size()[1]) if labels is not None else None
+    return output_labels, accuracy
+
+def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=None):
+    """ """
+    outputs, loss = model(
+        inputs, labels=labels
+    )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
+    _, label_indices = torch.max(outputs, dim=-1)
+
+    output_labels, accuracy = generate_label(label_indices, labels)
 
     return {"raw": outputs, "indices": label_indices, "labels": output_labels, "loss": loss, "accuracy": accuracy}
 
@@ -171,12 +174,11 @@ if __name__ == "__main__":
     torch.manual_seed(0)
     config = parameters.BrazenParameters()
 
-    dataset_prompt = ""
     while dataset_prompt not in ["0", "1"]:
         dataset_prompt = input("Choose between [0: primus, 1: symposium]: ")
     
     if dataset_prompt == "0":
-        primus_dataset = dataset.PrimusDataset(config, PRIMUS_PATH)
+        primus_dataset = primus.PrimusDataset(config, PRIMUS_PATH)
         #config.set_dataset_properties(len(primus_dataset.tokens), primus_dataset.max_label_length)
         token_map = primus_dataset.tokens
 
@@ -226,7 +228,7 @@ if __name__ == "__main__":
             selection = sorted_models[prompt]
             print(f"Loading model {selection}...")
             model_state = torch.load(selection)
-            model = neural_network.BrazenNet(config).to(device)
+            model = brazen_score.BrazenScore(config).to(device)
             model.load_state_dict(model_state)
 
             print("Done loading!")
@@ -237,8 +239,8 @@ if __name__ == "__main__":
             config.load_checkpoint(selection)
 
     if not did_load:
-        print("Creating BrazenNet...")
-        model = neural_network.BrazenNet(config).to(device)
+        print("Creating BrazenScore...")
+        model = brazen_score.BrazenScore(config).to(device)
         configured_init_weights = functools.partial(init_weights, standard_deviation=config.standard_deviation)
         model.apply(configured_init_weights)
         print("Done creating!")
