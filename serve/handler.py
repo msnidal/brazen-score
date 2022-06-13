@@ -90,11 +90,15 @@ class BrazenAbcHandler(base_handler.BaseHandler):
     def preprocess(self, data):
         print(data)
         line = data[0]
+
         body = line.get("body")
         if not body:
-            raise ValueError("No body in request. Pass in a POST request with JSON.")
+            body = line
         
-        score = body.get("score")
+        instances = body.get("instances")
+        instance = instances[0]
+        score = instance.get("score")
+
         if not score:
             raise ValueError("No score in JSON body. Pass in the ABC score with the score key in the body.")
 
