@@ -282,7 +282,7 @@ class Symposium(torch.utils.data.IterableDataset):
     
 
     def get_dataset_properties(self):
-        """Load or create the token mapping if it does not already exist.
+        """ Load or create the token mapping if it does not already exist.
         Needs to be re-run if the symposium dataset properties are changed.
         """
 

@@ -1,5 +1,6 @@
 # https://github.com/pytorch/serve/tree/master/model-archiver
 from cProfile import label
+from xml.sax.handler import property_interning_dict
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
@@ -7,11 +8,13 @@ import subprocess
 from pathlib import Path
 
 import fitz
+import pickle
 import einops
 from PIL import Image
 
 from ts.torch_handler import base_handler
 import ts
+
 #import symposium
 #import parameters
 #import train
@@ -39,6 +42,23 @@ def get_image_from_document(score_name):
     
     return image
 
+def generate_label(label_indices, token_map):
+    output_labels = []
+    num_symbols = len(token_map)
+    for batch in label_indices:
+        batch_labels = []
+        for index in batch:
+            if index == num_symbols + 1:
+                batch_labels.append("EOS")
+            elif index == num_symbols:
+                batch_labels.append("BOS")
+            elif index == num_symbols + 2:
+                batch_labels.append("")
+            else:
+                batch_labels.append(token_map[index])
+        output_labels.append(batch_labels)
+
+    return output_labels
 
 IMAGE_SHAPE = (512, 512)
 IMAGE_MEAN = 0.5
@@ -51,6 +71,7 @@ COMPOSE_TRANSFORMS = [
         (IMAGE_STANDARD_DEVIATION)
     )
 ]
+DATASET_PROPERTIES_PATH = Path("/home/model-server/symposium_properties.pickle")
 
 class BrazenAbcHandler(base_handler.BaseHandler):
     """ Handle text in ABC format - convert to lilypond, render and evaluate
@@ -60,22 +81,29 @@ class BrazenAbcHandler(base_handler.BaseHandler):
         super().initialize(context)
         self.transforms = transforms.Compose(COMPOSE_TRANSFORMS)
 
-        #symposium = symposium.Symposium(self.model.config)
-        #self.token_map = symposium.token_map
+        with open(str(DATASET_PROPERTIES_PATH), "rb") as handle:
+            properties = pickle.load(handle)
+
+        self.token_map = properties["tokens"]
+        self.max_label_length = properties["max_label_length"] + 10
 
     def preprocess(self, data):
+        print(data)
         line = data[0]
-        text = line.get("data")
+        body = line.get("body")
+        if not body:
+            raise ValueError("No body in request. Pass in a POST request with JSON.")
+        
+        score = body.get("score")
+        if not score:
+            raise ValueError("No score in JSON body. Pass in the ABC score with the score key in the body.")
 
-        if not text:
-            raise ValueError("No text in request. Pass in a POST request with a 'data' field.")
-
-        if isinstance(text, (bytes, bytearray)):
-            text = text.decode('utf-8')
+        if isinstance(score, (bytes, bytearray)):
+            score = score.decode('utf-8')
 
         filename = "output"
         with open(f"{filename}.abc", "w") as f:
-            f.write(text)
+            f.write(score)
 
         command = ["abc2ly", f"{filename}.abc"]
         subprocess.run(command, capture_output=True)
@@ -92,8 +120,6 @@ class BrazenAbcHandler(base_handler.BaseHandler):
         return super().inference(data, *args, **kwargs)
 
     def postprocess(self, data):
-        print(data)
-        _, label_indices = torch.max(data, dim=-1)
-        return label_indices
-        #output_labels, _ = train.generate_label(label_indices)
-        #return output_labels
+        _, label_indices = torch.max(data[0], dim=-1)
+        output_labels = generate_label(label_indices, self.token_map)
+        return [" ".join(output_labels[0])]

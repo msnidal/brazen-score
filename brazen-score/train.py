@@ -62,7 +62,7 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
         with open(f"{output_folder}/{name_base}_{index}.txt", "w") as file:
             file.write(" ".join(label))
 
-def generate_label(label_indices, labels=None):
+def generate_label(label_indices, token_map, config, labels=None):
     output_labels = []
     for batch in label_indices:
         batch_labels = []
@@ -87,7 +87,7 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
     )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
     _, label_indices = torch.max(outputs, dim=-1)
 
-    output_labels, accuracy = generate_label(label_indices, labels)
+    output_labels, accuracy = generate_label(label_indices, token_map, config, labels)
 
     return {"raw": outputs, "indices": label_indices, "labels": output_labels, "loss": loss, "accuracy": accuracy}
 

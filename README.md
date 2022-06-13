@@ -37,7 +37,7 @@ docker run -t -d --rm -p 8080:8080 -p 8081:8081 --name=brazen-score brazen-score
 
 Query
 ```bash
-curl -X POST -H --silent --data-urlencode "data=\"X: 1\nM: 4/4\nL: 1/4\nK: C clef=treble\n| C D E F | G A B A | G F E D | C\"" http://localhost:8080/predictions/brazen-score
+curl -s -X POST -H "Content-Type: application/json; charset=utf-8" -d @./serve/query.json http://localhost:8080/predictions/brazen-score
 ```
 
 For dependencies check https://pytorch.org/serve/use_cases.html#serve-custom-models-with-third-party-dependency

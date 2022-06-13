@@ -4,7 +4,7 @@ USER root
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y lilypond git && rm -rf /var/lib/apt/lists/* && cd /tmp # buildkit
 
 USER model-server
-COPY brazen-score/models.py brazen-score/brazen_score.py brazen-score/utils.py brazen-score/parameters.py serve/config.properties serve/handler.py serve/requirements.txt models/brazen-score.pth /home/model-server/
+COPY brazen-score/models.py brazen-score/brazen_score.py brazen-score/utils.py brazen-score/parameters.py serve/config.properties serve/handler.py serve/requirements.txt models/brazen-score.pth symposium_properties.pickle /home/model-server/
 
 RUN torch-model-archiver \
   --model-name brazen-score \
