@@ -1,4 +1,4 @@
-FROM pytorch/torchserve:latest-cpu
+FROM pytorch/torchserve:latest-gpu
 
 USER root
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y lilypond git && rm -rf /var/lib/apt/lists/* && cd /tmp # buildkit

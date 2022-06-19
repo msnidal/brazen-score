@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torchvision import transforms
 import subprocess
 from pathlib import Path
+import uuid
 
 import fitz
 import pickle
@@ -105,7 +106,7 @@ class BrazenAbcHandler(base_handler.BaseHandler):
         if isinstance(score, (bytes, bytearray)):
             score = score.decode('utf-8')
 
-        filename = "output"
+        filename = str(uuid.uuid4())
         with open(f"{filename}.abc", "w") as f:
             f.write(score)
 

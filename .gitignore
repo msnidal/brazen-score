@@ -153,11 +153,9 @@ cython_debug/
 
 .vscode
 output/
-brazen-net.pth
 .DS_Store
 
 wandb/
-models/*.pth
 
 #lilypond
 *.ly
