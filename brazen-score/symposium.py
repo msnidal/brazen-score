@@ -61,7 +61,7 @@ def get_image_from_document(document_path):
     return cropped_image
 
 class Symposium(torch.utils.data.IterableDataset):
-    def __init__(self, config:parameters.BrazenParameters, output_directory:Path=Path(OUTPUT_DIRECTORY), seed:int=None, transforms=None):
+    def __init__(self, config:parameters.BrazenParameters, output_directory:Path=Path(OUTPUT_DIRECTORY), transforms=None):
         """ Note: mutates config
         """
         self.output_directory = output_directory
@@ -71,7 +71,7 @@ class Symposium(torch.utils.data.IterableDataset):
         compose_transforms = COMPOSE_TRANSFORMS + transforms
         self.transforms = tvtransforms.Compose(compose_transforms)
 
-        self.random = random.Random(seed)
+        self.random = random.Random(config.seed)
 
         with open(MEASURE_FRAGMENTS_FILENAME, "rb") as file:
             self.measure_fragments = pickle.load(file)
@@ -93,9 +93,6 @@ class Symposium(torch.utils.data.IterableDataset):
             self.random = random.Random(worker_info.seed)
             return self
     
-    def set_seed(self, seed:int = 0):
-        self.random = random.Random(seed)
-
     def generate_fragment(self, clef=CLEFS[0], name="measure", rest_threshold=0.2):
         """ Generate a fragment of a score, consisting of 1-8 notes in a jaunty tune
         """

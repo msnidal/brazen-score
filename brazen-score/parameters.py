@@ -54,6 +54,9 @@ IMAGE_STANDARD_DEVIATION = 0.5
 DEFAULT_TOKEN_MAP_LENGTH = 779
 DEFAULT_MAX_LABEL_LENGTH = 68
 
+DEFAULT_SEED = 0
+DEFAULT_DATASET = "symposium"
+
 class BrazenParameters:
     def __init__(
         self,
@@ -85,12 +88,13 @@ class BrazenParameters:
         exit_after=EXIT_AFTER,
         standard_deviation=STANDARD_DEVIATION,
         image_mean=IMAGE_MEAN,
-        image_standard_deviation=IMAGE_STANDARD_DEVIATION
+        image_standard_deviation=IMAGE_STANDARD_DEVIATION,
+        seed=DEFAULT_SEED,
+        model_loaded=None,
+        dataset=DEFAULT_DATASET
     ):
         params = locals()
-        self.params = {}
         for param in params:
-            self.params[param] = params[param]
             setattr(self, param, params[param])
 
         self.set_dataset_properties(num_symbols, label_length)
@@ -99,7 +103,6 @@ class BrazenParameters:
         """ We have different number of symbols and label length based on the dataset properties
         """
         self.num_symbols = num_symbols
-        self.params["num_symbols"] = num_symbols
 
         self.beginning_of_sequence = num_symbols
         self.end_of_sequence = num_symbols + 1
@@ -107,15 +110,4 @@ class BrazenParameters:
         self.total_symbols = num_symbols + 3
 
         self.label_length = label_length
-        self.params["label_length"] = label_length
-
         self.sequence_length = label_length + 1 # includes EOS symbol
-    
-    def load_checkpoint(self, model_name):
-        """ Set the checkpoint name in the config so runs can be re-created """
-        self.model_loaded = model_name
-        self.params["model_loaded"] = model_name
-
-    def __eq__(self, other):
-        return self.params == other.params
-

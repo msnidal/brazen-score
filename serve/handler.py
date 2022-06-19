@@ -16,10 +16,6 @@ from PIL import Image
 from ts.torch_handler import base_handler
 import ts
 
-#import symposium
-#import parameters
-#import train
-
 BATCH_SIZE = 24
 
 def get_image_from_document(score_name):

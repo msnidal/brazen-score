@@ -12,6 +12,7 @@ from torch import cuda, optim, nn
 import torch
 import numpy as np
 import wandb
+import argparse
 
 import brazen_score
 import symposium
@@ -21,8 +22,22 @@ import parameters
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
-MODEL_PATH = "./brazen-net.pth"
+MODEL_FILENAME = "brazen-net.pth"
+
 MODEL_FOLDER = Path("models")
+PRIMUS, SYMPOSIUM = "primus", "symposium"
+DEFAULT_SEED = 0
+
+parser = argparse.ArgumentParser(description="Trains the brazen-score model")
+parser.add_argument("mode", choices=["train", "test"], help="Train from scratch or test an existing model")
+parser.add_argument("--load-file", help=f"Filename to the load the model for testing or training, within the folder {MODEL_FOLDER}")
+parser.add_argument("--save-file", default=MODEL_FILENAME, help=f"Filename to save the model upon completion of training, within the folder {MODEL_FOLDER}")
+parser.add_argument("--dataset", default=SYMPOSIUM, choices=[SYMPOSIUM, PRIMUS], help="Which of the two datasets to for training or evaluation")
+parser.add_argument("--seed", default=DEFAULT_SEED, help="Torch manual seed to set before training")
+parser.add_argument("--track", action="store_const", const=True, default=False, help="Track the experiment using weights & biases")
+
+
+args = parser.parse_args()
 
 
 def init_weights(module, standard_deviation):
@@ -171,15 +186,11 @@ def test(model, test_loader, device, token_map, config:parameters.BrazenParamete
 
 if __name__ == "__main__":
     # Create, split dataset into train & test
-    torch.manual_seed(0)
-    config = parameters.BrazenParameters()
+    torch.manual_seed(args.seed)
+    config = parameters.BrazenParameters(seed=args.seed, model_loaded=args.load_file, dataset=args.dataset)
 
-    while dataset_prompt not in ["0", "1"]:
-        dataset_prompt = input("Choose between [0: primus, 1: symposium]: ")
-    
-    if dataset_prompt == "0":
+    if args.dataset == PRIMUS:
         primus_dataset = primus.PrimusDataset(config, PRIMUS_PATH)
-        #config.set_dataset_properties(len(primus_dataset.tokens), primus_dataset.max_label_length)
         token_map = primus_dataset.tokens
 
         train_size = int(0.8 * len(primus_dataset))
@@ -190,77 +201,36 @@ if __name__ == "__main__":
         test_loader = torchdata.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
     else:
         symposium = symposium.Symposium(config)
-        #config.set_dataset_properties(len(symposium.token_map), symposium.max_label_length)
         token_map = symposium.token_map
 
         train_loader = torchdata.DataLoader(symposium, batch_size=config.batch_size, num_workers=config.num_workers)
         test_loader = torchdata.DataLoader(symposium, batch_size=config.batch_size, num_workers=config.num_workers)
 
-
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")
 
-    trained_models = list(MODEL_FOLDER.glob("**/*.pth"))
-    date_template = "%a %b %d %X %Y"
-    date_models, other_models = {}, []
-    for model in trained_models:
-        if validate(model.stem, date_template) is True:
-            date_models[datetime.strptime(model.stem, date_template)] = model
-        else:
-            other_models.append(model)
-    
-    sorted_models = []
-    for key in sorted(date_models.keys(), reverse=True):
-        sorted_models.append(date_models[key])
-    sorted_models += other_models
+    if args.load_file is not None:
+        model_path = MODEL_FOLDER / str(args.load_file)
+        print(f"Loading model {model_path}...")
+        model_state = torch.load(model_path, map_location=device)
+        model = brazen_score.BrazenScore(config).to(device)
+        model.load_state_dict(model_state)
 
-    did_load = False
-    if trained_models:
-        print("Found the following models: ")
-        for index, model_path in enumerate(sorted_models):
-            print(f"{index}\t: {model_path}")
-        prompt = ""
-        while prompt != "N" and prompt != "L":
-            prompt = input("Enter L to load checkpoint or N to train from scratch: ")
-        if prompt == "L":
-            while prompt not in range(len(sorted_models)):
-                prompt = int(input("Select the model index from above: "))
-            selection = sorted_models[prompt]
-            print(f"Loading model {selection}...")
-            model_state = torch.load(selection)
-            model = brazen_score.BrazenScore(config).to(device)
-            model.load_state_dict(model_state)
-
-            print("Done loading!")
-            did_load = True
-            model_seed = int(hashlib.sha256(selection.stem.encode("utf-8")).hexdigest(), 16) % 10**8
-            torch.manual_seed(model_seed)
-            symposium.set_seed(model_seed)
-            config.load_checkpoint(selection)
-
-    if not did_load:
+        print("Done loading!")
+    else:
         print("Creating BrazenScore...")
         model = brazen_score.BrazenScore(config).to(device)
         configured_init_weights = functools.partial(init_weights, standard_deviation=config.standard_deviation)
         model.apply(configured_init_weights)
         print("Done creating!")
     
-    prompt = None
-    while prompt not in ("T", "I"):
-        prompt = input("Enter T for train or I for infer mode: ")
-
-    if prompt == "T":
+    if args.mode == "train":
         print("Training model...")
-        use_wandb=None
-        while use_wandb not in [True, False]:
-            wandb_prompt = input("Use wandb? (T/F): ")
-            use_wandb = wandb_prompt == "T" if wandb_prompt in ["T", "F"] else None
-
-        train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
+        train(model, train_loader, device, token_map, config, use_wandb=args.track)
         print("Done training!")
 
         print("Saving model...")
-        model_path = MODEL_FOLDER / f"{time.ctime()}.pth"
+        model_path = MODEL_FOLDER / args.save_file
         torch.save(model.state_dict(), model_path)
         print("Done saving model!")
     else:
