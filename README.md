@@ -41,3 +41,12 @@ curl -s -X POST -H "Content-Type: application/json; charset=utf-8" -d @./serve/q
 ```
 
 For dependencies check https://pytorch.org/serve/use_cases.html#serve-custom-models-with-third-party-dependency
+
+```bash
+curl \
+-X POST \
+-H "Authorization: Bearer $(gcloud auth print-access-token)" \
+-H "Content-Type: application/json charset=utf-8" \
+https://us-central1-aiplatform.googleapis.com/v1/projects/$PROJECT_ID/locations/us-central1/endpoints/$ENDPOINT_ID:predict \
+-d "@$INPUT_DATA_FILE"
+```

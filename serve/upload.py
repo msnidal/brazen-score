@@ -1,6 +1,6 @@
 from google.cloud import aiplatform
 
-VERSION = 1
+VERSION = 2
 MODEL_NAME = "brazen-score"
 model_display_name = f"{MODEL_NAME}-v{VERSION}"
 model_description = "Brazen Score"
