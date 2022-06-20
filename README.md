@@ -50,3 +50,15 @@ curl \
 https://us-central1-aiplatform.googleapis.com/v1/projects/$PROJECT_ID/locations/us-central1/endpoints/$ENDPOINT_ID:predict \
 -d "@$INPUT_DATA_FILE"
 ```
+
+### GCP
+
+Create AI platform model from container
+```bash
+gcloud ai models upload --container-image-uri=northamerica-northeast1-docker.pkg.dev/brazen-score/brazen-score/brazen-score --display-name=brazen-score --container-health-route=/ping --container-predict-route=/predictions/brazen-score --container-ports=8080 --region=us-central1
+```
+
+Deploy model to endpoint (with GPU)
+```bash
+gcloud ai endpoints deploy-model projects/33769752758/locations/us-central1/endpoints/5056865082374356992 --display-name=brazen-score --model=projects/33769752758/locations/us-central1/models/3793706541966688256 --region=us-central1 --machine-type=n1-standard-2 --accelerator=type=nvidia-tesla-k80 
+```
