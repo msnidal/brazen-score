@@ -1,0 +1,20 @@
+name: Build Serve Container
+on:
+  push:
+    tags:
+      - '*'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GAR
+        uses: docker/login-action@v2
+        with:
+          registry: northamerica-northeast1-docker.pkg.dev/brazen-score/brazen-score
+          username: _json_key
+          password: ${{ secrets.GCP_CREDENTIALS }}
+      - name: Build and push
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          tags: northamerica-northeast1-docker.pkg.dev/brazen-score/brazen-score/brazen-score:latest
