@@ -123,4 +123,4 @@ class BrazenAbcHandler(base_handler.BaseHandler):
     def postprocess(self, data):
         _, label_indices = torch.max(data[0], dim=-1)
         output_labels = generate_label(label_indices, self.token_map)
-        return [" ".join(output_labels[0])]
+        return [{"predictions": [" ".join(output_labels[0])]}]
