@@ -7,8 +7,9 @@ from datetime import datetime
 import time
 
 from matplotlib import pyplot as plt
+from py import process
 from torch.utils import data as torchdata
-from torch import cuda, optim, nn
+from torch import cuda, optim, nn, multiprocessing, distributed
 import torch
 import numpy as np
 import wandb
@@ -21,24 +22,14 @@ import parameters
 
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
+os.environ['MASTER_ADDR'] = "localhost"
+os.environ['MASTER_PORT'] = "8888"
+
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_FILENAME = "brazen-net.pth"
 
 MODEL_FOLDER = Path("models")
 PRIMUS, SYMPOSIUM = "primus", "symposium"
-DEFAULT_SEED = 0
-
-parser = argparse.ArgumentParser(description="Trains the brazen-score model")
-parser.add_argument("mode", choices=["train", "test"], help="Train from scratch or test an existing model")
-parser.add_argument("--load-file", help=f"Filename to the load the model for testing or training, within the folder {MODEL_FOLDER}")
-parser.add_argument("--save-file", default=MODEL_FILENAME, help=f"Filename to save the model upon completion of training, within the folder {MODEL_FOLDER}")
-parser.add_argument("--dataset", default=SYMPOSIUM, choices=[SYMPOSIUM, PRIMUS], help="Which of the two datasets to for training or evaluation")
-parser.add_argument("--seed", default=DEFAULT_SEED, help="Torch manual seed to set before training")
-parser.add_argument("--track", action="store_const", const=True, default=False, help="Track the experiment using weights & biases")
-
-
-args = parser.parse_args()
-
 
 def init_weights(module, standard_deviation):
     if isinstance(module, nn.Linear):
@@ -125,7 +116,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             print(f"Done training after {samples_processed} samples!")
             break
         
-        if batch_index % config.save_every == 0:
+        if (batch_index + 1) % config.save_every == 0:
             model_path = MODEL_FOLDER / "train.pth"
             torch.save(model.state_dict(), model_path)
 
@@ -138,7 +129,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
 
         running_loss += loss
 
-        if batch_index % config.optimize_every == 0 and batch_index != 0:
+        if (batch_index + 1) % config.optimize_every == 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
             optimizer.step()
             optimizer.zero_grad()
@@ -183,11 +174,18 @@ def test(model, test_loader, device, token_map, config:parameters.BrazenParamete
             # Comment out
             write_disk(images.cpu(), outputs["labels"])
 
-
-if __name__ == "__main__":
+def main(process_index, args):
     # Create, split dataset into train & test
+    distributed.init_process_group(
+        backend='nccl',
+        init_method="env://",
+        world_size=args.gpus,
+        rank=process_index
+    )
+
     torch.manual_seed(args.seed)
-    config = parameters.BrazenParameters(seed=args.seed, model_loaded=args.load_file, dataset=args.dataset)
+    seed = process_index + args.seed
+    config = parameters.BrazenParameters(seed=seed, model_loaded=args.load_file, dataset=args.dataset)
 
     if args.dataset == PRIMUS:
         primus_dataset = primus.PrimusDataset(config, PRIMUS_PATH)
@@ -197,8 +195,8 @@ if __name__ == "__main__":
         test_size = len(primus_dataset) - train_size
         train_dataset, test_dataset = torchdata.random_split(primus_dataset, [train_size, test_size])
 
-        train_loader = torchdata.DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
-        test_loader = torchdata.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True, num_workers=1)
+        train_loader = torchdata.DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
+        test_loader = torchdata.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
     else:
         symposium = symposium.Symposium(config)
         token_map = symposium.token_map
@@ -223,6 +221,8 @@ if __name__ == "__main__":
         configured_init_weights = functools.partial(init_weights, standard_deviation=config.standard_deviation)
         model.apply(configured_init_weights)
         print("Done creating!")
+
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[process_index])
     
     if args.mode == "train":
         print("Training model...")
@@ -236,3 +236,16 @@ if __name__ == "__main__":
     else:
         print("Inferring...")
         test(model, test_loader, device, token_map, config)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Trains the brazen-score model")
+    parser.add_argument("mode", choices=["train", "test"], help="Train from scratch or test an existing model")
+    parser.add_argument("--load-file", help=f"Filename to the load the model for testing or training, within the folder {MODEL_FOLDER}")
+    parser.add_argument("--save-file", default=MODEL_FILENAME, help=f"Filename to save the model upon completion of training, within the folder {MODEL_FOLDER}")
+    parser.add_argument("--dataset", default=SYMPOSIUM, choices=[SYMPOSIUM, PRIMUS], help="Which of the two datasets to for training or evaluation")
+    parser.add_argument("--seed", default=0, help="Torch manual seed to set before training")
+    parser.add_argument("--track", action="store_const", const=True, default=False, help="Track the experiment using weights & biases")
+    parser.add_argument("--gpus", default=1, type=int, help="Number of GPUs to use for training. Spawns a process using torch.multiprocessing and DistributedDataParallel")
+    args = parser.parse_args()
+
+    multiprocessing.spawn(main, nprocs=args.gpus, args=(args,))
