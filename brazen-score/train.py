@@ -117,10 +117,6 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             print(f"Done training after {samples_processed} samples!")
             break
         
-        if (batch_index + 1) % config.save_every == 0:
-            model_path = MODEL_FOLDER / "train.pth"
-            torch.save(model.module.state_dict(), model_path)
-
         inputs, labels = inputs.to(device), labels.to(device)
 
         outputs = infer(model, inputs, token_map, config, labels=labels)
@@ -228,14 +224,18 @@ def main(process_index, args):
     
     if args.mode == "train":
         print("Training model...")
-        use_wandb = args.track and process_index == 0
-        train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
-        print("Done training!")
 
-        print("Saving model...")
-        model_path = MODEL_FOLDER / args.save_file
-        torch.save(model.state_dict(), model_path)
-        print("Done saving model!")
+        with model.join():
+            use_wandb = args.track and process_index == 0
+            train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
+
+        print("Done training!")
+        if process_index == 0:
+            print("Saving model...")
+            model_path = MODEL_FOLDER / args.save_file
+
+            torch.save(model.state_dict(), model_path)
+            print("Done saving model!")
     else:
         print("Inferring...")
         test(model, test_loader, device, token_map, config)
