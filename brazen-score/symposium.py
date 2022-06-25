@@ -89,8 +89,9 @@ class Symposium(torch.utils.data.IterableDataset):
             print("Single worker mode, using manually specified seed")
             return self
         else:
-            print(f"Setting worker {worker_info.id} to seed {worker_info.seed}")
-            self.random = random.Random(worker_info.seed)
+            seed = (self.config.seed * worker_info.num_workers) + worker_info.id
+            print(f"Setting worker {worker_info.id} to seed {seed}")
+            self.random = random.Random(worker_info.seed + self.config.seed)
             return self
     
     def generate_fragment(self, clef=CLEFS[0], name="measure", rest_threshold=0.2):

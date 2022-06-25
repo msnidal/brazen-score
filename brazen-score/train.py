@@ -24,6 +24,7 @@ import parameters
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"  # verbose debugging
 os.environ['MASTER_ADDR'] = "localhost"
 os.environ['MASTER_PORT'] = "8888"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 PRIMUS_PATH = Path(Path.home(), Path("Data/sheet-music/primus"))
 MODEL_FILENAME = "brazen-net.pth"
@@ -46,7 +47,7 @@ def init_weights(module, standard_deviation):
 
 
 def count_trainable_params(model):
-    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
+    model_parameters = filter(lambda p: p.requires_grad, model.module.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     return params
 
@@ -100,14 +101,14 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.AdamW(model.get_parameters(), betas=config.betas, eps=config.eps)
-    model.train()
+    optimizer = optim.AdamW(model.module.get_parameters(), betas=config.betas, eps=config.eps)
+    model.module.train()
 
     if use_wandb:
-        model_config = vars(model.config)
+        model_config = vars(model.module.config)
         model_config.pop("self")
         wandb.init(project="brazen-score", entity="msnidal", config=model_config)
-        wandb.watch(model)
+        wandb.watch(model.module)
 
     running_accuracy, running_loss = 0, 0
     for batch_index, (inputs, labels) in enumerate(train_loader):  # get index and batch
@@ -118,7 +119,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         
         if (batch_index + 1) % config.save_every == 0:
             model_path = MODEL_FOLDER / "train.pth"
-            torch.save(model.state_dict(), model_path)
+            torch.save(model.module.state_dict(), model_path)
 
         inputs, labels = inputs.to(device), labels.to(device)
 
@@ -130,7 +131,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         running_loss += loss
 
         if (batch_index + 1) % config.optimize_every == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+            torch.nn.utils.clip_grad_norm_(model.module.parameters(), config.grad_norm_clip)
             optimizer.step()
             optimizer.zero_grad()
 
@@ -158,7 +159,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
 
 def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=0):
     """Test"""
-    model.eval()  # eval mode
+    model.module.eval()  # eval mode
 
     # since we're not training, we don't need to calculate the gradients for our outputs
     with torch.no_grad():
@@ -205,7 +206,8 @@ def main(process_index, args):
         test_loader = torchdata.DataLoader(symposium_dataset, batch_size=config.batch_size, num_workers=config.num_workers)
 
     device = "cuda" if cuda.is_available() else "cpu"
-    print(f"Using {device} device")
+    torch.cuda.set_device(process_index)
+    print(f"Using {device} device on process {process_index}")
 
     if args.load_file is not None:
         model_path = MODEL_FOLDER / str(args.load_file)
