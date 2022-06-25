@@ -198,11 +198,11 @@ def main(process_index, args):
         train_loader = torchdata.DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
         test_loader = torchdata.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True, num_workers=config.num_workers)
     else:
-        symposium = symposium.Symposium(config)
-        token_map = symposium.token_map
+        symposium_dataset = symposium.Symposium(config)
+        token_map = symposium_dataset.token_map
 
-        train_loader = torchdata.DataLoader(symposium, batch_size=config.batch_size, num_workers=config.num_workers)
-        test_loader = torchdata.DataLoader(symposium, batch_size=config.batch_size, num_workers=config.num_workers)
+        train_loader = torchdata.DataLoader(symposium_dataset, batch_size=config.batch_size, num_workers=config.num_workers)
+        test_loader = torchdata.DataLoader(symposium_dataset, batch_size=config.batch_size, num_workers=config.num_workers)
 
     device = "cuda" if cuda.is_available() else "cpu"
     print(f"Using {device} device")
