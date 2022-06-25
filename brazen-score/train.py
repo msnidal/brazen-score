@@ -47,7 +47,7 @@ def init_weights(module, standard_deviation):
 
 
 def count_trainable_params(model):
-    model_parameters = filter(lambda p: p.requires_grad, model.module.parameters())
+    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     return params
 
@@ -101,14 +101,14 @@ def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=N
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
     """Bingus"""
-    optimizer = optim.AdamW(model.module.get_parameters(), betas=config.betas, eps=config.eps)
-    model.module.train()
+    optimizer = optim.AdamW(model.get_parameters(), betas=config.betas, eps=config.eps)
+    model.train()
 
     if use_wandb:
-        model_config = vars(model.module.config)
+        model_config = vars(model.config)
         model_config.pop("self")
         wandb.init(project="brazen-score", entity="msnidal", config=model_config)
-        wandb.watch(model.module)
+        wandb.watch(model)
 
     running_accuracy, running_loss = 0, 0
     for batch_index, (inputs, labels) in enumerate(train_loader):  # get index and batch
@@ -127,7 +127,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         running_loss += loss
 
         if (batch_index + 1) % config.optimize_every == 0:
-            torch.nn.utils.clip_grad_norm_(model.module.parameters(), config.grad_norm_clip)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
             optimizer.step()
             optimizer.zero_grad()
 
@@ -155,7 +155,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
 
 def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=0):
     """Test"""
-    model.module.eval()  # eval mode
+    model.eval()  # eval mode
 
     # since we're not training, we don't need to calculate the gradients for our outputs
     with torch.no_grad():
@@ -171,18 +171,10 @@ def test(model, test_loader, device, token_map, config:parameters.BrazenParamete
             # Comment out
             write_disk(images.cpu(), outputs["labels"])
 
-def main(process_index, args):
+def main(args):
     # Create, split dataset into train & test
-    distributed.init_process_group(
-        backend='nccl',
-        init_method="env://",
-        world_size=args.gpus,
-        rank=process_index
-    )
-
     torch.manual_seed(args.seed)
-    seed = process_index + args.seed
-    config = parameters.BrazenParameters(seed=seed, model_loaded=args.load_file, dataset=args.dataset)
+    config = parameters.BrazenParameters(seed=args.seed, model_loaded=args.load_file, dataset=args.dataset)
 
     if args.dataset == PRIMUS:
         primus_dataset = primus.PrimusDataset(config, PRIMUS_PATH)
@@ -202,8 +194,7 @@ def main(process_index, args):
         test_loader = torchdata.DataLoader(symposium_dataset, batch_size=config.batch_size, num_workers=config.num_workers)
 
     device = "cuda" if cuda.is_available() else "cpu"
-    torch.cuda.set_device(process_index)
-    print(f"Using {device} device on process {process_index}")
+    print(f"Using {device} device")
 
     if args.load_file is not None:
         model_path = MODEL_FOLDER / str(args.load_file)
@@ -220,22 +211,15 @@ def main(process_index, args):
         model.apply(configured_init_weights)
         print("Done creating!")
 
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[process_index])
-    
     if args.mode == "train":
         print("Training model...")
-
-        with model.join():
-            use_wandb = args.track and process_index == 0
-            train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
-
+        train(model, train_loader, device, token_map, config, use_wandb=args.track)
         print("Done training!")
-        if process_index == 0:
-            print("Saving model...")
-            model_path = MODEL_FOLDER / args.save_file
 
-            torch.save(model.state_dict(), model_path)
-            print("Done saving model!")
+        print("Saving model...")
+        model_path = MODEL_FOLDER / args.save_file
+        torch.save(model.state_dict(), model_path)
+        print("Done saving model!")
     else:
         print("Inferring...")
         test(model, test_loader, device, token_map, config)
@@ -248,7 +232,6 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", default=SYMPOSIUM, choices=[SYMPOSIUM, PRIMUS], help="Which of the two datasets to for training or evaluation")
     parser.add_argument("--seed", default=0, help="Torch manual seed to set before training")
     parser.add_argument("--track", action="store_const", const=True, default=False, help="Track the experiment using weights & biases")
-    parser.add_argument("--gpus", default=1, type=int, help="Number of GPUs to use for training. Spawns a process using torch.multiprocessing and DistributedDataParallel")
     args = parser.parse_args()
 
-    multiprocessing.spawn(main, nprocs=args.gpus, args=(args,))
+    main(args)
