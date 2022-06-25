@@ -228,7 +228,8 @@ def main(process_index, args):
     
     if args.mode == "train":
         print("Training model...")
-        train(model, train_loader, device, token_map, config, use_wandb=args.track)
+        use_wandb = args.track and process_index == 0
+        train(model, train_loader, device, token_map, config, use_wandb=use_wandb)
         print("Done training!")
 
         print("Saving model...")
