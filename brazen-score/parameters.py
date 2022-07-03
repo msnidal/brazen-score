@@ -5,11 +5,11 @@ import subprocess
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 96
-DECODER_EMBEDDING_DIM = 4096
+DECODER_EMBEDDING_DIM = 2048
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
-ENCODER_BLOCK_STAGES = (2, 6, 2)  # Number of transformer blocks in each of the 4 stages
-NUM_DECODER_BLOCKS = 4  # Number of decoder blocks
+ENCODER_BLOCK_STAGES = (2, 2, 2)  # Number of transformer blocks in each of the 4 stages
+NUM_DECODER_BLOCKS = 2  # Number of decoder blocks
 REDUCE_FACTOR = 4  # reduce factor (increase in patch size) in patch merging layer per stage
 
 # NN constants

@@ -92,13 +92,13 @@ def generate_label(label_indices, token_map, config, labels=None):
 
 def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=None):
     """ """
-    outputs, loss = model(
+    outputs = model(
         inputs, labels=labels
     )
     _, label_indices = torch.max(outputs, dim=-1)
 
     output_labels, accuracy = generate_label(label_indices, token_map, config, labels)
-    return {"raw": outputs, "indices": label_indices, "labels": output_labels, "loss": loss, "accuracy": accuracy}
+    return {"raw": outputs, "indices": label_indices, "labels": output_labels, "accuracy": accuracy}
 
 
 def train(model, train_loader, device, token_map, config:parameters.BrazenParameters, use_wandb:bool=True):
@@ -124,7 +124,6 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
         outputs = infer(model, inputs, token_map, config, labels=labels)
         running_accuracy += outputs["accuracy"]
         loss = functional.cross_entropy(outputs["raw"].transpose(2, 1), labels) / config.batch_accumulate
-        loss = outputs["loss"] / config.batch_accumulate
         loss.backward()
 
         running_loss += loss
