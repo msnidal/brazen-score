@@ -4,7 +4,7 @@ from typing import OrderedDict
 from einops.layers import torch as einops_torch
 import einops
 import torch
-from torch import nn
+from torch import embedding, nn
 import numpy as np
 
 import utils
@@ -17,6 +17,23 @@ ENCODER = "encoder"
 DECODER = "decoder"
 
 
+class MultiLayerPerceptron(nn.Module):
+    """ Common MLP head used for both the encoder and decoder blocks """
+
+    def __init__(self, embedding_dim: int, config: parameters.BrazenParameters):
+        super().__init__()
+        feed_forward = OrderedDict()
+        feed_forward["linear_1"] = nn.Linear(embedding_dim, embedding_dim * config.feed_forward_expansion)
+        feed_forward["gelu"] = nn.GELU()
+        feed_forward["linear_2"] = nn.Linear(embedding_dim * config.feed_forward_expansion, embedding_dim)
+        feed_forward["dropout"] = nn.Dropout(config.dropout_rate)
+        self.feed_forward = nn.Sequential(feed_forward)
+
+    def forward(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        embeddings = self.feed_forward(input_tensor)
+        return embeddings
+
+
 class MultiHeadAttention(nn.Module):
     """ Generic multi-head attention module implemented throughout both visual and output sequence transformer """
 
@@ -25,7 +42,7 @@ class MultiHeadAttention(nn.Module):
         embedding_dim: int,
         config: parameters.BrazenParameters,
         mask: torch.Tensor = None,
-        position_bias_dim: int = None,
+        position_bias_dim: tuple = None,
         position_bias_indices: tuple = None,
     ):
         super().__init__()
@@ -41,7 +58,6 @@ class MultiHeadAttention(nn.Module):
 
         # Optional properties
         if mask is not None:
-            #assert mask.shape == (self. self.head_dim, self.head_dim), f"Mask is {mask.shape}, must be square matrix of shape {self.head_dim}x{self.head_dim} (Embedding dim {embedding_dim} // Num heads {config.num_heads})"
             self.register_buffer("mask", mask, persistent=False)
         else:
             self.mask = None
@@ -61,7 +77,7 @@ class MultiHeadAttention(nn.Module):
         self.embed_output = nn.Linear(embedding_dim, embedding_dim)
         self.output_dropout = nn.Dropout(config.dropout_rate)
 
-    def forward(self, embeddings: dict): # query: torch.Tensor, key: torch.Tensor, value: torch.Tensor):
+    def forward(self, embeddings: dict):
         """Apply multi-head attention to query, key and value
         Embeddings should have three keys: "query", "key" and "value"
         """
@@ -77,7 +93,7 @@ class MultiHeadAttention(nn.Module):
             # Optional position bias for swin transforms
             if self.position_bias is not None:
                 attention_scores = (
-                    attention_scores + self.position_bias[self.position_bias_indices[0], self.position_bias_indices[1]]
+                    attention_scores + self.position_bias[head_index][self.position_bias_indices[0], self.position_bias_indices[1]]
                 )
             if self.mask is not None:
                 attention_scores = attention_scores.masked_fill(self.mask, float("-inf"))
@@ -163,7 +179,7 @@ class SwinSelfAttention(nn.Module):
     ):
         super().__init__()
 
-        position_bias_dim = (2 * config.window_patch_shape[1] - 1, 2 * config.window_patch_shape[0] - 1)
+        position_bias_dim = (config.num_heads, 2 * config.window_patch_shape[1] - 1, 2 * config.window_patch_shape[0] - 1)
         mask = self.generate_mask(window_shape, config.window_patch_shape, apply_shift=apply_shift)
         self.attention = MultiHeadAttention(
             embedding_dim,
@@ -224,17 +240,11 @@ class SwinTransformerBlock(nn.Module):
             horizontal_patches=config.window_patch_shape[0],
         )  # fix the number of patches per window, let it find number of windows from image
 
-        attention = OrderedDict()
         self.self_attention_norm = nn.LayerNorm(embedding_dim)
         self.self_attention = SwinSelfAttention(embedding_dim, window_shape, apply_shift, config)
 
         self.feed_forward_norm = nn.LayerNorm(embedding_dim)
-        feed_forward = OrderedDict()
-        feed_forward["linear_1"] = nn.Linear(embedding_dim, embedding_dim * config.feed_forward_expansion)
-        feed_forward["gelu"] = nn.GELU()
-        feed_forward["linear_2"] = nn.Linear(embedding_dim * config.feed_forward_expansion, embedding_dim)
-        feed_forward["dropout"] = nn.Dropout(config.dropout_rate)
-        self.feed_forward = nn.Sequential(feed_forward)
+        self.feed_forward = MultiLayerPerceptron(embedding_dim, config)
 
         self.join_windows = einops_torch.Rearrange(
             utils.assemble_einops_string(
@@ -247,7 +257,7 @@ class SwinTransformerBlock(nn.Module):
 
     def forward(self, embeddings: torch.Tensor):
         if self.cyclic_shift:
-            embeddings = embeddings.roll(self.cyclic_shift, dims=(1, 2))  # base[:][0][0]  == shifted[:][4][4]
+            embeddings = embeddings.roll(self.cyclic_shift, dims=(1, 2))
 
         patches = self.partition_windows(embeddings)
         normalized_patches = self.self_attention_norm(patches)
@@ -331,12 +341,7 @@ class DecoderBlock(nn.Module):
         self.transform = MultiHeadAttention(config.decoder_embedding_dim, config)
 
         self.feed_forward_norm = nn.LayerNorm(config.decoder_embedding_dim)
-        feed_forward = OrderedDict()
-        feed_forward["linear_0"] = nn.Linear(config.decoder_embedding_dim, config.decoder_embedding_dim * config.decoder_feed_forward_expansion)
-        feed_forward["gelu"] = nn.GELU()
-        feed_forward["linear_1"] = nn.Linear(config.decoder_embedding_dim * config.decoder_feed_forward_expansion, config.decoder_embedding_dim)
-        feed_forward["dropout"] = nn.Dropout(config.dropout_rate)
-        self.feed_forward = nn.Sequential(feed_forward)
+        self.feed_forward = MultiLayerPerceptron(config.decoder_embedding_dim, config)
 
     def forward(self, embeddings: dict):
         assert ENCODER in embeddings and DECODER in embeddings, "Embeddings dictionary missing keys {ENCODER} and {DECODER}"

@@ -75,7 +75,6 @@ class BrazenScore(nn.Module):
         self.embed_tokens = nn.Embedding(
             config.total_symbols, config.decoder_embedding_dim
         )
-        #self.embed_positions = nn.Embedding(config.sequence_length, config.decoder_embedding_dim)
 
         decoder = OrderedDict()
         for index in range(config.num_decoder_blocks):
@@ -93,7 +92,7 @@ class BrazenScore(nn.Module):
 
         parameter_decay = {True: set(), False: set()}
 
-        for module_name, module in self.named_modules():
+        for _, module in self.named_modules():
             for parameter_name, parameter in module.named_parameters():
                 bucket = True if parameter_name.endswith("weight") and isinstance(module, nn.Linear) else False 
                 parameter_decay[bucket].add(parameter)
@@ -116,11 +115,9 @@ class BrazenScore(nn.Module):
         ), "The output was not reduced to a single window at the final output stage. Check window shape, reduce factor, and encoder block stages."
 
         encoder_embeddings = self.embed_encoder_output(encoded_images)
-
         embeddings = {
             models.ENCODER: einops.rearrange(encoder_embeddings, "batch encoder_embedding -> batch 1 encoder_embedding").expand(self.config.batch_size, self.config.sequence_length, self.config.decoder_embedding_dim)
         }
-        #positions = torch.arange(self.config.sequence_length, device=encoder_embeddings.device, dtype=torch.long)
 
         if labels is None:  # the model is being used in inference mdoe
             labels = torch.tensor(
@@ -128,8 +125,8 @@ class BrazenScore(nn.Module):
             )  # Begin masked
             labels = einops.repeat(labels, "symbol -> batch symbol", batch=self.config.batch_size)
 
-            for index in range(self.output_length):
-                embeddings[models.DECODER] = self.embed_tokens(labels) #+ self.embed_positions(positions)
+            for _ in range(self.output_length):
+                embeddings[models.DECODER] = self.embed_tokens(labels)
 
                 decoder_outputs = self.decoder(embeddings)
                 output_sequence = self.output(decoder_outputs[models.DECODER])
@@ -143,7 +140,7 @@ class BrazenScore(nn.Module):
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
             shifted_labels[:, 0] = self.config.beginning_of_sequence
 
-            embeddings[models.DECODER] = self.embed_tokens(shifted_labels) #+ self.embed_positions(positions)
+            embeddings[models.DECODER] = self.embed_tokens(shifted_labels)
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs[models.DECODER])

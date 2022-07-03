@@ -66,7 +66,7 @@ class PrimusDataset(torchdata.Dataset):
         image_file = self.root_path / score / (score + ".png")
         image = tvio.read_image(str(image_file), tvio.ImageReadMode.GRAY)
         image = self.transforms(image)
-        image = image.type(torch.FloatTensor).rename("channels", "height", "width") / 255.0  # normalize to float
+        image = image.type(torch.BFloat16Tensor).rename("channels", "height", "width") / 255.0  # normalize to float
         image = torch.squeeze(image, "channels")  # remove channel dimension
 
         return image.rename(None)

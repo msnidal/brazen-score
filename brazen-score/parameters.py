@@ -1,39 +1,37 @@
 import subprocess
 
-# Neural network
+# Neural network architecture
 # Following (horizontal, vertical) coordinates
 WINDOW_PATCH_SHAPE = (8, 8)
 PATCH_DIM = 8
 ENCODER_EMBEDDING_DIM = 96
-DECODER_EMBEDDING_DIM = 2048
+DECODER_EMBEDDING_DIM = 4096
 NUM_HEADS = 8
 FEED_FORWARD_EXPANSION = 4  # Expansion factor for self attention feed-forward
-DECODER_FEED_FORWARD_EXPANSION = 2  # Expansion factor for self attention feed-forward
-ENCODER_BLOCK_STAGES = (4, 4)  # Number of transformer blocks in each of the 4 stages
-NUM_DECODER_BLOCKS = 2  # Number of decoder blocks
-REDUCE_FACTOR = 8  # reduce factor (increase in patch size) in patch merging layer per stage
+ENCODER_BLOCK_STAGES = (2, 6, 2)  # Number of transformer blocks in each of the 4 stages
+NUM_DECODER_BLOCKS = 4  # Number of decoder blocks
+REDUCE_FACTOR = 4  # reduce factor (increase in patch size) in patch merging layer per stage
+
+# NN constants
+DROPOUT_RATE = 0.05
 
 # Dataset
-LABEL_MODE = "semantic"
-NUM_SYMBOLS = 758 if LABEL_MODE == "agnostic" else 1781
-LABEL_LENGTH = 75 if LABEL_MODE == "agnostic" else 58
-
 RAW_IMAGE_SHAPE = (2048, 2048)
-IMAGE_SHAPE = (512, 512)  # rough ratio that's easily dividible
+IMAGE_SHAPE = (1024, 1024)  # rough ratio that's easily dividible
 
 # Training
-BATCH_SIZE = 24
-OPTIMIZE_EVERY = 2
+BATCH_SIZE = 8
+BATCH_ACCUMULATE = 8
 SAVE_EVERY = 1000
 
+# Optimizer
 LEARNING_RATE = 3e-4
-BETAS = (0.9, 0.95)
-EPS = 1e-9
+BETAS = (0.9, 0.999)
+EPS = 1e-8
 WEIGHT_DECAY = 0.1
 
+# Infra
 NUM_WORKERS = 8
-
-DROPOUT_RATE = 0.05
 GRAD_NORM_CLIP = 1.0
 
 try:
@@ -42,17 +40,20 @@ except subprocess.CalledProcessError as e:
     print(e.output)
     GIT_COMMIT = "unknown"
 
-WARMUP_SAMPLES = 300000
-EXIT_AFTER = 2100000
+# Training - length
+WARMUP_SAMPLES = 1200000
+EXIT_AFTER = 16800000
 
+# Initialization 
 STANDARD_DEVIATION = 0.02
 
+# Preprocessing
 IMAGE_MEAN = 0.5
 IMAGE_STANDARD_DEVIATION = 0.5
 
+# Dataset defaults 
 DEFAULT_TOKEN_MAP_LENGTH = 779
 DEFAULT_MAX_LABEL_LENGTH = 68
-
 DEFAULT_SEED = 0
 DEFAULT_DATASET = "symposium"
 
@@ -66,14 +67,13 @@ class BrazenParameters:
         decoder_embedding_dim=DECODER_EMBEDDING_DIM,
         num_heads=NUM_HEADS,
         feed_forward_expansion=FEED_FORWARD_EXPANSION,
-        decoder_feed_forward_expansion=DECODER_FEED_FORWARD_EXPANSION,
         encoder_block_stages=ENCODER_BLOCK_STAGES,
         num_decoder_blocks=NUM_DECODER_BLOCKS,
         reduce_factor=REDUCE_FACTOR,
         label_length=DEFAULT_MAX_LABEL_LENGTH,
         num_symbols=DEFAULT_TOKEN_MAP_LENGTH,
         batch_size=BATCH_SIZE,
-        optimize_every=OPTIMIZE_EVERY,
+        batch_accumulate=BATCH_ACCUMULATE,
         save_every=SAVE_EVERY,
         eps=EPS,
         betas=BETAS,

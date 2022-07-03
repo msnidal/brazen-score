@@ -69,6 +69,7 @@ def write_disk(image_batch, labels, name_base="brazen", output_folder="output"):
         with open(f"{output_folder}/{name_base}_{index}.txt", "w") as file:
             file.write(" ".join(label))
 
+
 def generate_label(label_indices, token_map, config, labels=None):
     output_labels = []
     for batch in label_indices:
@@ -87,15 +88,15 @@ def generate_label(label_indices, token_map, config, labels=None):
     accuracy = (labels == label_indices).sum().item() / (label_indices.size()[0] * label_indices.size()[1]) if labels is not None else None
     return output_labels, accuracy
 
+
 def infer(model, inputs, token_map, config:parameters.BrazenParameters, labels=None):
     """ """
     outputs, loss = model(
         inputs, labels=labels
-    )  # TODO: Batch size work for NLLLoss in k dimensions https://pytorch.org/docs/stable/generated/torch.nn.NLLLoss.html
+    )
     _, label_indices = torch.max(outputs, dim=-1)
 
     output_labels, accuracy = generate_label(label_indices, token_map, config, labels)
-
     return {"raw": outputs, "indices": label_indices, "labels": output_labels, "loss": loss, "accuracy": accuracy}
 
 
@@ -121,12 +122,12 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
 
         outputs = infer(model, inputs, token_map, config, labels=labels)
         running_accuracy += outputs["accuracy"]
-        loss = outputs["loss"]
+        loss = outputs["loss"] / config.batch_accumulate
         loss.backward()
 
         running_loss += loss
 
-        if (batch_index + 1) % config.optimize_every == 0:
+        if (batch_index + 1) % config.batch_accumulate == 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
             optimizer.step()
             optimizer.zero_grad()
@@ -141,17 +142,15 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
             for parameter_group in optimizer.param_groups:
                 parameter_group["lr"] = learning_rate
 
-            accuracy = running_accuracy / config.optimize_every
+            accuracy = running_accuracy / config.batch_accumulate
             running_accuracy = 0
 
-            loss = running_loss / config.optimize_every
+            loss = running_loss / config.batch_accumulate
             running_loss = 0
 
             if use_wandb:
                 wandb.log({"loss": loss, "batch_index": batch_index, "samples_processed": samples_processed, "learning_rate": learning_rate, "accuracy": accuracy})
             
-
-
 
 def test(model, test_loader, device, token_map, config:parameters.BrazenParameters, exit_after:int=0):
     """Test"""
@@ -170,6 +169,7 @@ def test(model, test_loader, device, token_map, config:parameters.BrazenParamete
 
             # Comment out
             write_disk(images.cpu(), outputs["labels"])
+
 
 def main(args):
     # Create, split dataset into train & test
