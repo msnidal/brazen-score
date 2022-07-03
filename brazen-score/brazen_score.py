@@ -4,7 +4,6 @@ from einops.layers import torch as einops_torch
 import einops
 import torch
 from torch import nn
-from torch.nn import functional
 
 import utils
 import parameters
@@ -134,7 +133,6 @@ class BrazenScore(nn.Module):
                 labels = torch.roll(labels, shifts=1, dims=-1)
                 labels[:, 0] = self.config.beginning_of_sequence
 
-            loss = None
         else:
             # Shift right
             shifted_labels = torch.roll(labels, shifts=1, dims=-1)
@@ -144,6 +142,5 @@ class BrazenScore(nn.Module):
 
             decoder_outputs = self.decoder(embeddings)
             output_sequence = self.output(decoder_outputs[models.DECODER])
-            loss = functional.cross_entropy(output_sequence.transpose(2, 1), labels, reduction="mean")
 
-        return output_sequence, loss
+        return output_sequence
