@@ -9,6 +9,7 @@ import time
 from matplotlib import pyplot as plt
 from py import process
 from torch.utils import data as torchdata
+from torch.nn import functional
 from torch import cuda, optim, nn, multiprocessing, distributed
 import torch
 import numpy as np
@@ -122,6 +123,7 @@ def train(model, train_loader, device, token_map, config:parameters.BrazenParame
 
         outputs = infer(model, inputs, token_map, config, labels=labels)
         running_accuracy += outputs["accuracy"]
+        loss = functional.cross_entropy(outputs["raw"].transpose(2, 1), labels) / config.batch_accumulate
         loss = outputs["loss"] / config.batch_accumulate
         loss.backward()
 
